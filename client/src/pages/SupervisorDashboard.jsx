@@ -3,12 +3,13 @@ import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import PunchWidget from '../components/PunchWidget';
 import RegisterEmployeeModal from '../components/RegisterEmployeeModal';
-import { Users, Cpu, Shield, UserPlus, Sparkles, AlertTriangle, UserCheck, CheckCircle, RefreshCw } from 'lucide-react';
+import { Users, Cpu, Shield, UserPlus, Sparkles, AlertTriangle, UserCheck, CheckCircle, RefreshCw, Clock } from 'lucide-react';
 
 const SupervisorDashboard = ({ setActiveTab }) => {
   const { user, API_BASE } = useContext(AuthContext);
   const [employees, setEmployees] = useState([]);
   const [pendingEmps, setPendingEmps] = useState([]);
+  const [pendingLatePunches, setPendingLatePunches] = useState([]);
   const [machines, setMachines] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,14 +19,16 @@ const SupervisorDashboard = ({ setActiveTab }) => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [empRes, pendingRes, machRes, alertRes] = await Promise.all([
+      const [empRes, pendingRes, lateRes, machRes, alertRes] = await Promise.all([
         axios.get(`${API_BASE}/employees?status=Active`),
         axios.get(`${API_BASE}/employees/pending`),
+        axios.get(`${API_BASE}/attendance/pending-late`),
         axios.get(`${API_BASE}/machines`),
         axios.get(`${API_BASE}/maintenance`)
       ]);
       setEmployees(empRes.data);
       setPendingEmps(pendingRes.data);
+      setPendingLatePunches(lateRes.data);
       setMachines(machRes.data);
       setAlerts(alertRes.data);
     } catch (err) {
@@ -44,6 +47,20 @@ const SupervisorDashboard = ({ setActiveTab }) => {
     try {
       const res = await axios.post(`${API_BASE}/employees/approve/${id}`, {
         approvedBy: user?.employeeToken || 'Supervisor'
+      });
+      setMessage(`✅ ${res.data.message}`);
+      loadData();
+    } catch (err) {
+      setMessage(`❌ Failed: ${err.response?.data?.message || err.message}`);
+    }
+  };
+
+  const handleApproveLatePunch = async (attendanceId) => {
+    setMessage('');
+    try {
+      const res = await axios.post(`${API_BASE}/attendance/approve-late/${attendanceId}`, {
+        supervisorToken: user?.employeeToken || '3085',
+        supervisorName: user?.employeeProfile?.name || 'Supervisor'
       });
       setMessage(`✅ ${res.data.message}`);
       loadData();
@@ -104,7 +121,7 @@ const SupervisorDashboard = ({ setActiveTab }) => {
       {/* Overview Cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: '1rem',
         marginBottom: '1.5rem'
       }}>
@@ -126,7 +143,7 @@ const SupervisorDashboard = ({ setActiveTab }) => {
         <div className="card" style={{ borderLeft: '4px solid #f59e0b' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>PENDING APPROVALS</div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>PENDING ACCOUNT APPROVALS</div>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: pendingEmps.length > 0 ? '#fbbf24' : '#34d399', marginTop: '0.2rem' }}>
                 {pendingEmps.length}
               </div>
@@ -135,6 +152,21 @@ const SupervisorDashboard = ({ setActiveTab }) => {
           </div>
           <div style={{ fontSize: '0.75rem', color: '#fbbf24', marginTop: '0.5rem' }}>
             Awaiting Supervisor Activation
+          </div>
+        </div>
+
+        <div className="card" style={{ borderLeft: '4px solid #f43f5e' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>LATE PUNCH APPROVALS</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: pendingLatePunches.length > 0 ? '#f87171' : '#34d399', marginTop: '0.2rem' }}>
+                {pendingLatePunches.length}
+              </div>
+            </div>
+            <Clock style={{ color: pendingLatePunches.length > 0 ? '#f43f5e' : '#10b981' }} size={32} />
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#f87171', marginTop: '0.5rem' }}>
+            Punched in &gt; 10 mins late
           </div>
         </div>
 
@@ -152,24 +184,69 @@ const SupervisorDashboard = ({ setActiveTab }) => {
             Winding (5), Testing (3), Metalizing (4)
           </div>
         </div>
-
-        <div className="card" onClick={() => setActiveTab('maintenance')} style={{ cursor: 'pointer' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>CLEANING ALERTS</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: alerts.length > 0 ? '#fbbf24' : '#34d399', marginTop: '0.2rem' }}>
-                {alerts.length}
-              </div>
-            </div>
-            <AlertTriangle style={{ color: alerts.length > 0 ? '#f59e0b' : '#10b981' }} size={32} />
-          </div>
-          <div style={{ fontSize: '0.75rem', color: '#fbbf24', marginTop: '0.5rem' }}>
-            2-Wk Metalizing & 1-Mo General
-          </div>
-        </div>
       </div>
 
-      {/* Pending Approvals Section */}
+      {/* Pending Late Punch Approvals Section (> 10 Mins Delay) */}
+      {pendingLatePunches.length > 0 && (
+        <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid #f43f5e' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Clock style={{ color: '#f43f5e' }} size={22} />
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>
+                Late Punch In Approvals Required (&gt; 10 Mins Grace Period) ({pendingLatePunches.length})
+              </h3>
+            </div>
+            <span className="badge badge-rose">Late Punch Verification</span>
+          </div>
+
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Token #</th>
+                  <th>Employee Name</th>
+                  <th>Punch In Timestamp</th>
+                  <th>Delay Duration</th>
+                  <th>Punch Out Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingLatePunches.map(att => (
+                  <tr key={att._id}>
+                    <td><strong>#{att.tokenNo}</strong></td>
+                    <td>{att.employeeId?.name || `Token #${att.tokenNo}`}</td>
+                    <td>{new Date(att.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td>
+                      <span className="badge badge-rose">
+                        Late by {att.lateMinutes} mins
+                      </span>
+                    </td>
+                    <td>
+                      {att.punchOut ? (
+                        <span className="badge badge-cyan">Punched Out ({att.totalHours} hrs)</span>
+                      ) : (
+                        <span className="badge badge-emerald">On Shift</span>
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => handleApproveLatePunch(att._id)}
+                        className="btn btn-success"
+                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+                      >
+                        <CheckCircle size={14} /> Approve Late Punch
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Pending Account Approvals Section */}
       {pendingEmps.length > 0 && (
         <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid #f59e0b' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>

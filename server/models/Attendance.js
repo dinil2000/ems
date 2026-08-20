@@ -32,14 +32,29 @@ const attendanceSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  status: {
-    type: String,
-    enum: ['Present', 'Absent', 'On Leave', 'In Progress'],
-    default: 'In Progress',
+  isLate: {
+    type: Boolean,
+    default: false,
+  },
+  lateMinutes: {
+    type: Number,
+    default: 0,
+  },
+  shiftStartTime: {
+    type: String, // e.g. "07:00 AM"
   },
   supervisorApproved: {
     type: Boolean,
-    default: true,
+    default: true, // Auto-approved if <= 10 mins late; set to false if > 10 mins late
+  },
+  approvedBy: {
+    tokenNo: { type: String },
+    name: { type: String },
+  },
+  status: {
+    type: String,
+    enum: ['Present', 'In Progress', 'Pending Late Approval', 'Absent', 'On Leave'],
+    default: 'In Progress',
   },
 }, { timestamps: true });
 
