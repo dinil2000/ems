@@ -45,7 +45,6 @@ const getAssignedShiftStart = async (tokenNo, now) => {
       shiftLabel: `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`
     };
   } catch (err) {
-    // Default 08:30 AM fallback
     const shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 30, 0);
     const graceCutoffDate = new Date(shiftStartDate.getTime() + 10 * 60 * 1000);
     return { shiftStartDate, graceCutoffDate, shiftLabel: '08:30' };
@@ -61,7 +60,6 @@ router.post('/punch-in', async (req, res) => {
     const employee = await Employee.findOne({ tokenNo });
     if (!employee) return res.status(404).json({ message: 'Employee profile not found for this token number.' });
 
-    // Account status check
     if (employee.status === 'Inactive') {
       return res.status(403).json({ message: `Account Inactive! Punching Token #${tokenNo} is deactivated.` });
     }
@@ -79,7 +77,6 @@ router.post('/punch-in', async (req, res) => {
       return res.status(400).json({ message: 'Already punched in for today.', attendance: record });
     }
 
-    // Check shift start time & 10-minute grace period
     const { shiftStartDate, graceCutoffDate, shiftLabel } = await getAssignedShiftStart(tokenNo, now);
 
     const isLate = now > graceCutoffDate;
@@ -90,7 +87,6 @@ router.post('/punch-in', async (req, res) => {
 
     const isSunday = now.getDay() === 0;
 
-    // Rule: Auto-approved if within 10-min grace period; requires Supervisor Late Approval if > 10 mins late
     const supervisorApproved = !isLate;
     const status = isLate ? 'Pending Late Approval' : 'In Progress';
 
@@ -125,10 +121,10 @@ router.post('/punch-in', async (req, res) => {
   }
 });
 
-// Punch Out (Allowed freely without waiting for punch-in approval!)
+// Punch Out (Calculates EXACT worked hours from Punch In timestamp to Punch Out timestamp)
 router.post('/punch-out', async (req, res) => {
   try {
-    const { tokenNo, hoursOverride } = req.body;
+    const { tokenNo, punchOutTimeOverride } = req.body;
     if (!tokenNo) return res.status(400).json({ message: 'Punching Token number is required.' });
 
     const employee = await Employee.findOne({ tokenNo });
@@ -155,12 +151,18 @@ router.post('/punch-out', async (req, res) => {
       return res.status(400).json({ message: 'No active punch-in record found to punch out.' });
     }
 
-    const punchOutTime = now;
-    const diffMs = punchOutTime - new Date(record.punchIn);
-    let totalHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
-    
-    if (totalHrs < 1) totalHrs = hoursOverride ? parseFloat(hoursOverride) : 7.5;
+    const punchOutTime = punchOutTimeOverride ? new Date(punchOutTimeOverride) : now;
+    const punchInTime = new Date(record.punchIn);
 
+    // Calculate exact difference in milliseconds and convert to decimal hours
+    const diffMs = Math.max(0, punchOutTime - punchInTime);
+    const totalHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+
+    const totalMinutes = Math.floor(diffMs / (1000 * 60));
+    const hrsDisplay = Math.floor(totalMinutes / 60);
+    const minsDisplay = totalMinutes % 60;
+
+    // Standard shift = 7.5 hours. Overtime = hours > 7.5
     const overtimeHrs = totalHrs > 7.5 ? parseFloat((totalHrs - 7.5).toFixed(2)) : 0;
 
     record.punchOut = punchOutTime;
@@ -170,7 +172,7 @@ router.post('/punch-out', async (req, res) => {
     await record.save();
 
     res.json({
-      message: `Punched Out successfully at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}! Total worked: ${totalHrs} hrs.`,
+      message: `Punched Out successfully at ${punchOutTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}! Worked: ${hrsDisplay} hrs ${minsDisplay} mins (${totalHrs} hrs total).`,
       attendance: record
     });
   } catch (error) {
