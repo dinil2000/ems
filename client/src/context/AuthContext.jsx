@@ -12,30 +12,20 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const savedUser = localStorage.getItem('ems_user');
-    if (savedUser && token) {
+    const savedToken = localStorage.getItem('ems_token');
+    if (savedUser && savedToken) {
       try {
         setUser(JSON.parse(savedUser));
+        setToken(savedToken);
       } catch (e) {
         console.error('Failed to parse user session');
+        localStorage.removeItem('ems_user');
+        localStorage.removeItem('ems_token');
       }
     } else {
-      // Default initial Site Admin user for instant demo & testing
-      const defaultAdmin = {
-        id: 'siteadmin01',
-        employeeToken: 'ADMIN01',
-        email: 'admin@keltron.co.in',
-        role: 'SiteAdmin',
-        employeeProfile: {
-          tokenNo: 'ADMIN01',
-          name: 'Site Administrator (Keltron Head)',
-          qualification: 'Diploma',
-          experienceYears: 10,
-          basicSalary: 60000,
-          gender: 'Male',
-          machineExpertise: ['700', '705', '710', '765(1)', '766'],
-        }
-      };
-      setUser(defaultAdmin);
+      // No automatic login! User must authenticate with valid username & password.
+      setUser(null);
+      setToken(null);
     }
     setLoading(false);
   }, []);
@@ -75,21 +65,8 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
-  // Toggle role helper for quick testing between SiteAdmin, Supervisor, and Employee
-  const toggleRole = () => {
-    if (!user) return;
-    let newRole = 'Employee';
-    if (user.role === 'Employee') newRole = 'Supervisor';
-    else if (user.role === 'Supervisor') newRole = 'SiteAdmin';
-    else if (user.role === 'SiteAdmin') newRole = 'Employee';
-
-    const updatedUser = { ...user, role: newRole };
-    setUser(updatedUser);
-    localStorage.setItem('ems_user', JSON.stringify(updatedUser));
-  };
-
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, toggleRole, API_BASE }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, API_BASE }}>
       {children}
     </AuthContext.Provider>
   );

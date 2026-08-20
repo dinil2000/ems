@@ -1,9 +1,9 @@
 import React, { useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
-import { Cpu, Shield, ShieldAlert, LogOut, RefreshCw } from 'lucide-react';
+import { Cpu, Shield, ShieldAlert, LogOut } from 'lucide-react';
 
 const Navbar = ({ activeTab, setActiveTab }) => {
-  const { user, logout, toggleRole } = useContext(AuthContext);
+  const { user, logout } = useContext(AuthContext);
 
   return (
     <nav style={{
@@ -49,7 +49,7 @@ const Navbar = ({ activeTab, setActiveTab }) => {
               onClick={() => setActiveTab('admin')}
               style={{ border: '1px solid #6366f1' }}
             >
-              <ShieldAlert size={16} style={{ color: '#818cf8' }} /> Site Admin (/admin)
+              <ShieldAlert size={16} style={{ color: '#818cf8' }} /> Root Admin Portal (/admin)
             </button>
           )}
 
@@ -107,18 +107,16 @@ const Navbar = ({ activeTab, setActiveTab }) => {
         </div>
       )}
 
-      {/* User Info & Role Switcher */}
+      {/* User Info */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
         {user && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <button
-              onClick={toggleRole}
-              title="Click to toggle role between SiteAdmin, Supervisor, and Employee for testing"
+            <span
               className={user.role === 'SiteAdmin' ? 'badge badge-indigo' : (user.role === 'Supervisor' ? 'badge badge-cyan' : 'badge badge-emerald')}
-              style={{ cursor: 'pointer', padding: '0.35rem 0.75rem' }}
+              style={{ padding: '0.35rem 0.75rem' }}
             >
-              <RefreshCw size={12} /> Role: {user.role}
-            </button>
+              Role: {user.role === 'SiteAdmin' ? 'ROOT SITE ADMIN' : user.role}
+            </span>
 
             <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
               <div style={{ fontWeight: 700, color: '#f8fafc' }}>
@@ -130,7 +128,7 @@ const Navbar = ({ activeTab, setActiveTab }) => {
             </div>
 
             <button onClick={logout} className="btn btn-secondary" title="Logout" style={{ padding: '0.4rem 0.6rem' }}>
-              <LogOut size={16} />
+              <LogOut size={16} /> Logout
             </button>
           </div>
         )}
