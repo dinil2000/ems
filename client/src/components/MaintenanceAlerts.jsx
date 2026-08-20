@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { AlertTriangle, Wrench, CheckCircle2, Clock, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Wrench, CheckCircle2, Clock, ShieldCheck, XCircle, Send } from 'lucide-react';
 
 const MaintenanceAlerts = () => {
   const { user, API_BASE } = useContext(AuthContext);
@@ -25,11 +25,46 @@ const MaintenanceAlerts = () => {
     fetchAlerts();
   }, []);
 
-  const handleMarkCompleted = async (id) => {
+  // Worker submits machine cleaning request to Supervisor
+  const handleWorkerRequestCleaning = async (id) => {
     setMessage('');
     try {
-      const res = await axios.post(`${API_BASE}/maintenance/complete/${id}`);
+      const tokenNo = user?.employeeToken || '8356';
+      const name = user?.employeeProfile?.name || 'Operator';
+      const res = await axios.post(`${API_BASE}/maintenance/request-completion/${id}`, {
+        tokenNo,
+        name
+      });
       setMessage(`✅ ${res.data.message}`);
+      fetchAlerts();
+    } catch (err) {
+      setMessage(`❌ Failed: ${err.response?.data?.message || err.message}`);
+    }
+  };
+
+  // Supervisor approves worker machine cleaning request
+  const handleSupervisorApproveCleaning = async (id) => {
+    setMessage('');
+    try {
+      const supervisorToken = user?.employeeToken || '3085';
+      const supervisorName = user?.employeeProfile?.name || 'Supervisor';
+      const res = await axios.post(`${API_BASE}/maintenance/approve/${id}`, {
+        supervisorToken,
+        supervisorName
+      });
+      setMessage(`✅ ${res.data.message}`);
+      fetchAlerts();
+    } catch (err) {
+      setMessage(`❌ Failed: ${err.response?.data?.message || err.message}`);
+    }
+  };
+
+  // Supervisor rejects worker machine cleaning request
+  const handleSupervisorRejectCleaning = async (id) => {
+    setMessage('');
+    try {
+      const res = await axios.post(`${API_BASE}/maintenance/reject/${id}`);
+      setMessage(`⚠️ ${res.data.message}`);
       fetchAlerts();
     } catch (err) {
       setMessage(`❌ Failed: ${err.response?.data?.message || err.message}`);
@@ -51,9 +86,9 @@ const MaintenanceAlerts = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
           <Wrench style={{ color: '#f59e0b' }} size={24} />
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>MPP Machine Maintenance & Cleaning Alert System</h2>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>MPP Machine Cleaning & Supervisor Approval Portal</h2>
             <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0.2rem 0 0 0' }}>
-              Automated Cron Alerts: <strong>Metalizing Central Cleaning (Every 2 Weeks)</strong> & <strong>General Cleaning (Every 1 Month)</strong>
+              Worker submits machine cleaning request • Supervisor verifies and approves cleaning completion
             </p>
           </div>
         </div>
@@ -61,9 +96,9 @@ const MaintenanceAlerts = () => {
 
       {message && (
         <div style={{
-          backgroundColor: 'rgba(16, 185, 129, 0.15)',
-          color: '#34d399',
-          border: '1px solid #10b981',
+          backgroundColor: message.includes('✅') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+          color: message.includes('✅') ? '#34d399' : '#f87171',
+          border: message.includes('✅') ? '1px solid #10b981' : '1px solid #f43f5e',
           padding: '0.75rem 1rem',
           borderRadius: '8px',
           marginBottom: '1.5rem',
@@ -82,6 +117,7 @@ const MaintenanceAlerts = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
           {alerts.map((alert) => {
             const isOverdue = alert.status === 'Overdue';
+            const isPendingApproval = alert.status === 'Pending Approval';
             const isMetalizing = alert.machineCategory === 'Metalizing';
 
             return (
@@ -89,14 +125,14 @@ const MaintenanceAlerts = () => {
                 key={alert._id}
                 className="card card-hover"
                 style={{
-                  borderLeft: isOverdue ? '4px solid #f43f5e' : (isMetalizing ? '4px solid #f59e0b' : '4px solid #06b6d4'),
+                  borderLeft: isPendingApproval ? '4px solid #fbbf24' : (isOverdue ? '4px solid #f43f5e' : '4px solid #06b6d4'),
                   position: 'relative'
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
                   <div>
-                    <span className={isOverdue ? 'badge badge-rose' : 'badge badge-amber'}>
-                      {isOverdue ? <AlertTriangle size={12} /> : <Clock size={12} />}
+                    <span className={isPendingApproval ? 'badge badge-amber' : (isOverdue ? 'badge badge-rose' : 'badge badge-cyan')}>
+                      {isPendingApproval ? <ShieldCheck size={12} /> : (isOverdue ? <AlertTriangle size={12} /> : <Clock size={12} />)}
                       {alert.status}
                     </span>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginTop: '0.4rem', color: '#f8fafc' }}>
@@ -109,6 +145,19 @@ const MaintenanceAlerts = () => {
                 <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8', marginBottom: '0.5rem' }}>
                   {alert.alertType}
                 </div>
+
+                {alert.requestedBy?.name && (
+                  <div style={{
+                    fontSize: '0.78rem',
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    color: '#fbbf24',
+                    padding: '0.4rem 0.6rem',
+                    borderRadius: '6px',
+                    marginBottom: '0.6rem'
+                  }}>
+                    Worker Request: <strong>Token #{alert.requestedBy.tokenNo} ({alert.requestedBy.name})</strong>
+                  </div>
+                )}
 
                 <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: '0.75rem', lineHeight: '1.4' }}>
                   {alert.notes || 'Routine cleaning and maintenance check mandatory.'}
@@ -127,14 +176,55 @@ const MaintenanceAlerts = () => {
                   <span>Frequency: <strong>Every {alert.frequencyDays} Days</strong></span>
                 </div>
 
-                {user?.role === 'Supervisor' && (
-                  <button
-                    onClick={() => handleMarkCompleted(alert._id)}
-                    className="btn btn-success"
-                    style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }}
-                  >
-                    <CheckCircle2 size={16} /> Mark Cleaning Completed
-                  </button>
+                {/* Worker View: Request Cleaning Button */}
+                {user?.role === 'Employee' && (
+                  <div>
+                    {isPendingApproval ? (
+                      <button disabled className="btn btn-secondary" style={{ width: '100%', opacity: 0.75 }}>
+                        <ShieldCheck size={16} /> Request Sent (Awaiting Supervisor Approval)
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleWorkerRequestCleaning(alert._id)}
+                        className="btn btn-primary"
+                        style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }}
+                      >
+                        <Send size={16} /> Submit Cleaning Done Request to Supervisor
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Supervisor / SiteAdmin View: Approve or Reject Cleaning Request */}
+                {(user?.role === 'Supervisor' || user?.role === 'SiteAdmin') && (
+                  <div>
+                    {isPendingApproval ? (
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          onClick={() => handleSupervisorApproveCleaning(alert._id)}
+                          className="btn btn-success"
+                          style={{ flex: 1, padding: '0.5rem', fontSize: '0.85rem' }}
+                        >
+                          <CheckCircle2 size={16} /> Approve & Verify
+                        </button>
+                        <button
+                          onClick={() => handleSupervisorRejectCleaning(alert._id)}
+                          className="btn btn-danger"
+                          style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                        >
+                          <XCircle size={16} /> Reject
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleSupervisorApproveCleaning(alert._id)}
+                        className="btn btn-success"
+                        style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }}
+                      >
+                        <CheckCircle2 size={16} /> Mark & Approve Cleaning Done
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             );

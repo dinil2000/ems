@@ -17,7 +17,7 @@ const maintenanceAlertSchema = new mongoose.Schema({
   },
   frequencyDays: {
     type: Number,
-    required: true, // 14 for Metalizing, 30 for General
+    required: true,
   },
   lastCleanedDate: {
     type: Date,
@@ -29,8 +29,22 @@ const maintenanceAlertSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Overdue', 'Completed'],
+    enum: ['Pending', 'Pending Approval', 'Overdue', 'Completed', 'Rejected'],
     default: 'Pending',
+  },
+  requestedBy: {
+    tokenNo: { type: String },
+    name: { type: String },
+  },
+  requestedAt: {
+    type: Date,
+  },
+  approvedBy: {
+    tokenNo: { type: String },
+    name: { type: String },
+  },
+  approvedAt: {
+    type: Date,
   },
   notes: {
     type: String,
