@@ -1,0 +1,25 @@
+{
+  "name": "keltron-mpp-ems",
+  "version": "1.0.0",
+  "description": "Employee Management System for Keltron Component Complex Limited - MPP Section",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "server": "nodemon server/server.js",
+    "seed": "node -e \"require('./server/config/db')().then(() => require('./server/seed/seedData')().then(() => process.exit()))\"",
+    "client": "npm run dev --prefix client",
+    "dev": "concurrently \"npm run server\" \"npm run client\""
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.24.3",
+    "node-cron": "^4.6.0"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.4.3"
+  }
+}

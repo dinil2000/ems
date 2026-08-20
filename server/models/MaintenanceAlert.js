@@ -1,0 +1,40 @@
+const mongoose = require('mongoose');
+
+const maintenanceAlertSchema = new mongoose.Schema({
+  machineId: {
+    type: String,
+    required: true,
+  },
+  machineCategory: {
+    type: String,
+    enum: ['Winding', 'Testing', 'Metalizing'],
+    required: true,
+  },
+  alertType: {
+    type: String,
+    enum: ['Central Cleaning - Metalizing (Every 2 Weeks)', 'General Machine Cleaning (Every 1 Month)'],
+    required: true,
+  },
+  frequencyDays: {
+    type: Number,
+    required: true, // 14 for Metalizing, 30 for General
+  },
+  lastCleanedDate: {
+    type: Date,
+    required: true,
+  },
+  nextDueDate: {
+    type: Date,
+    required: true,
+  },
+  status: {
+    type: String,
+    enum: ['Pending', 'Overdue', 'Completed'],
+    default: 'Pending',
+  },
+  notes: {
+    type: String,
+  },
+}, { timestamps: true });
+
+module.exports = mongoose.model('MaintenanceAlert', maintenanceAlertSchema);
