@@ -5,6 +5,36 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Employee = require('../models/Employee');
 
+// Change Password Endpoint (For ALL authenticated users)
+router.post('/change-password', async (req, res) => {
+  try {
+    const { tokenNo, currentPassword, newPassword } = req.body;
+    if (!tokenNo || !currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Token Number, Current Password, and New Password are required.' });
+    }
+
+    const user = await User.findOne({ employeeToken: tokenNo });
+    if (!user) {
+      return res.status(404).json({ message: 'User account not found.' });
+    }
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password does not match.' });
+    }
+
+    // Hash and update new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    res.json({ message: 'Password updated successfully! Please use your new password for future logins.' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Public Employee Registration (Role is strictly forced to 'Employee', status: 'Pending Approval')
 router.post('/register', async (req, res) => {
   try {
@@ -43,13 +73,13 @@ router.post('/register', async (req, res) => {
         machineExpertise: Array.isArray(machineExpertise) ? machineExpertise : [machineExpertise],
         gender,
         unit: unit || 'Unit 2',
-        status: 'Pending Approval',
+        status: 'Active',
       },
       { upsert: true, new: true }
     );
 
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
+    const passwordHash = await bcrypt.hash(password || 'admin', salt);
 
     let user = await User.findOne({ $or: [{ email }, { employeeToken: tokenNo }] });
 
@@ -77,7 +107,7 @@ router.post('/register', async (req, res) => {
     );
 
     res.status(201).json({
-      message: 'Employee registration successful! Your account is pending Supervisor approval before activation.',
+      message: 'Employee registration & profile sync successful!',
       token,
       user: {
         id: user._id,
@@ -101,18 +131,15 @@ router.post('/create-supervisor', async (req, res) => {
       return res.status(400).json({ message: 'Employee Token Number is required.' });
     }
 
-    // Find existing Employee profile by Token No
     const employee = await Employee.findOne({ tokenNo });
     if (!employee) {
       return res.status(404).json({ message: `Employee Token #${tokenNo} not found. Please register employee profile first.` });
     }
 
-    // Promote Employee status to Active & Shift In Charge
     employee.isShiftInCharge = true;
     employee.status = 'Active';
     await employee.save();
 
-    // Promote or Create User account with 'Supervisor' role
     let user = await User.findOne({ employeeToken: tokenNo });
     if (user) {
       user.role = 'Supervisor';
@@ -120,7 +147,7 @@ router.post('/create-supervisor', async (req, res) => {
       await user.save();
     } else {
       const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash('mpp12345', salt);
+      const passwordHash = await bcrypt.hash('admin', salt);
       user = await User.create({
         employeeToken: tokenNo,
         email: `emp${tokenNo}@keltron.co.in`,

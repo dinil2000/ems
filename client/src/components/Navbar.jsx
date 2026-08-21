@@ -1,9 +1,11 @@
-import React, { useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
-import { Cpu, Shield, ShieldAlert, LogOut } from 'lucide-react';
+import ProfileModal from './ProfileModal';
+import { Cpu, Shield, ShieldAlert, LogOut, User, KeyRound } from 'lucide-react';
 
 const Navbar = ({ activeTab, setActiveTab }) => {
   const { user, logout } = useContext(AuthContext);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   return (
     <nav style={{
@@ -107,7 +109,7 @@ const Navbar = ({ activeTab, setActiveTab }) => {
         </div>
       )}
 
-      {/* User Info */}
+      {/* User Info & Profile Modal Trigger */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
         {user && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -118,14 +120,14 @@ const Navbar = ({ activeTab, setActiveTab }) => {
               Role: {user.role === 'SiteAdmin' ? 'ROOT SITE ADMIN' : user.role}
             </span>
 
-            <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
-              <div style={{ fontWeight: 700, color: '#f8fafc' }}>
-                {user.employeeProfile?.name || `Token: ${user.employeeToken}`}
-              </div>
-              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                Token #{user.employeeToken}
-              </div>
-            </div>
+            <button
+              onClick={() => setIsProfileOpen(true)}
+              className="btn btn-secondary"
+              style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }}
+              title="Edit Profile & Password"
+            >
+              <User size={14} /> My Profile & Password
+            </button>
 
             <button onClick={logout} className="btn btn-secondary" title="Logout" style={{ padding: '0.4rem 0.6rem' }}>
               <LogOut size={16} /> Logout
@@ -133,6 +135,11 @@ const Navbar = ({ activeTab, setActiveTab }) => {
           </div>
         )}
       </div>
+
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+      />
     </nav>
   );
 };
