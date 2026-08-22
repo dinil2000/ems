@@ -6,8 +6,7 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web",
-    "build:apk": "eas build -p android --profile preview"
+    "web": "expo start --web"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.23.1",
@@ -26,8 +25,7 @@
     "react-native-svg": "15.2.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.20.0",
-    "eas-cli": "^10.2.3"
+    "@babel/core": "^7.20.0"
   },
   "private": true
 }
