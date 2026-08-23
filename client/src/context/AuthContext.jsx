@@ -3,7 +3,7 @@ import axios from 'axios';
 
 export const AuthContext = createContext();
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -23,7 +23,6 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('ems_token');
       }
     } else {
-      // No automatic login! User must authenticate with valid username & password.
       setUser(null);
       setToken(null);
     }

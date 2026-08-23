@@ -13,6 +13,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Serverless DB Connection Middleware
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('MongoDB Connection Error:', err);
+    res.status(500).json({ error: 'Database Connection Error' });
+  }
+});
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/employees', require('./routes/employees'));
@@ -44,23 +55,23 @@ app.post('/api/seed', async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-// Initialize Server
-connectDB().then(async () => {
-  // Seed Database on launch if no employees exist
-  const Employee = require('./models/Employee');
-  const empCount = await Employee.countDocuments();
-  if (empCount === 0) {
-    console.log('📦 Database empty. Seeding initial MPP section employee roster & machines...');
-    await seedDatabase();
-  }
+if (require.main === module) {
+  connectDB().then(async () => {
+    const Employee = require('./models/Employee');
+    const empCount = await Employee.countDocuments();
+    if (empCount === 0) {
+      console.log('📦 Database empty. Seeding initial MPP section employee roster & machines...');
+      await seedDatabase();
+    }
+    initMaintenanceCron();
 
-  // Initialize Maintenance Cron Job
-  initMaintenanceCron();
-
-  app.listen(PORT, () => {
-    console.log(`🚀 Keltron MPP EMS Server running on port ${PORT}`);
-    console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
+    app.listen(PORT, () => {
+      console.log(`🚀 Keltron MPP EMS Server running on port ${PORT}`);
+      console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
+    });
+  }).catch(err => {
+    console.error('Server startup error:', err);
   });
-}).catch(err => {
-  console.error('Server startup error:', err);
-});
+}
+
+module.exports = app;
