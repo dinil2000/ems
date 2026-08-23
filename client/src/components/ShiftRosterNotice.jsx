@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { Printer, Calendar, RefreshCw, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
+import { Printer, Calendar, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 
 const ShiftRosterNotice = () => {
   const { user, API_BASE } = useContext(AuthContext);
@@ -18,7 +18,6 @@ const ShiftRosterNotice = () => {
       const res = await axios.get(`${API_BASE}/shifts/all`);
       if (res.data && res.data.length > 0) {
         setRosterList(res.data);
-        setCurrentIndex(0); // Default to most recent (Index 0)
       }
     } catch (err) {
       console.error('Error fetching roster notices:', err);
@@ -36,7 +35,7 @@ const ShiftRosterNotice = () => {
   };
 
   const handleGenerateRoster = async () => {
-    if (!window.confirm('Generate next week automated shift schedule (Monday to Saturday) with Notice Date set to Friday & Shift 1 <-> Shift 2 rotated?')) {
+    if (!window.confirm('Generate next week automated shift schedule (Monday to Saturday)? All 1st Shift workers will rotate to 2nd Shift, and 2nd Shift workers will rotate to 1st Shift with Friday Issue Date!')) {
       return;
     }
     setGenerating(true);
@@ -46,8 +45,12 @@ const ShiftRosterNotice = () => {
         requesterRole: user?.role
       });
       setGenMessage(`✅ ${res.data.message}`);
-      await fetchRosters();
-      setCurrentIndex(0); // Jump to newly generated roster
+      // Re-fetch all rosters and jump to newly created roster (Index 0)
+      const listRes = await axios.get(`${API_BASE}/shifts/all`);
+      if (listRes.data && listRes.data.length > 0) {
+        setRosterList(listRes.data);
+        setCurrentIndex(0);
+      }
     } catch (err) {
       setGenMessage(`❌ Shift Generation Failed: ${err.response?.data?.message || err.message}`);
     } finally {
@@ -71,11 +74,11 @@ const ShiftRosterNotice = () => {
 
   const currentRoster = rosterList[currentIndex] || null;
 
-  // Extract shift slots from current active roster or fallback to default dataset
+  // Extract shift slots from current active roster
   const getShiftAllocations = (shiftTypeKeyword) => {
-    if (!currentRoster || !currentRoster.shifts) return [];
-    const slot = currentRoster.shifts.find(s => s.shiftType.includes(shiftTypeKeyword));
-    if (!slot || !slot.allocations) return [];
+    if (!currentRoster || !currentRoster.shifts) return null;
+    const slot = currentRoster.shifts.find(s => s.shiftType && s.shiftType.includes(shiftTypeKeyword));
+    if (!slot || !slot.allocations || slot.allocations.length === 0) return null;
 
     let count = 1;
     const items = [];
@@ -86,15 +89,15 @@ const ShiftRosterNotice = () => {
             num: count++,
             tokenNo: emp.tokenNo,
             name: emp.name,
-            machine: alloc.machineId !== 'GENERAL_MPP' ? alloc.machineId : ''
+            machine: alloc.machineId && alloc.machineId !== 'GENERAL_MPP' ? alloc.machineId : ''
           });
         });
       }
     });
-    return items;
+    return items.length > 0 ? items : null;
   };
 
-  // Fallback / Static data matching official physical notice sheet if database is fresh
+  // Fallback data matching official physical notice sheet 1 if DB is empty
   const fallbackUnit2Shift1 = [
     { num: 1, tokenNo: '8709', name: 'ഹമൽ പി വി', machine: '700,705' },
     { num: 2, tokenNo: '1563', name: 'റചിൻ ലാൽ', machine: '' },
@@ -142,15 +145,24 @@ const ShiftRosterNotice = () => {
     { num: 23, tokenNo: '8788', name: 'ദീക്ഷിത്', machine: '' },
   ];
 
-  const displayUnit2Shift1 = getShiftAllocations('Shift-1').length > 0 ? getShiftAllocations('Shift-1') : fallbackUnit2Shift1;
-  const displayUnit2Shift2 = getShiftAllocations('Shift-2').length > 0 ? getShiftAllocations('Shift-2') : fallbackUnit2Shift2;
-  const displayUnit2Shift3 = getShiftAllocations('Shift-3').length > 0 ? getShiftAllocations('Shift-3') : fallbackUnit2Shift3;
+  const parsedShift1 = getShiftAllocations('Shift-1');
+  const parsedShift2 = getShiftAllocations('Shift-2');
+  const parsedShift3 = getShiftAllocations('Shift-3');
+
+  const displayUnit2Shift1 = parsedShift1 || fallbackUnit2Shift1;
+  const displayUnit2Shift2 = parsedShift2 || fallbackUnit2Shift2;
+  const displayUnit2Shift3 = parsedShift3 || fallbackUnit2Shift3;
 
   const canGenerateShift = user && (user.role === 'Supervisor' || user.role === 'SiteAdmin');
 
-  // Issue date: Friday date
-  const issueDateFormatted = currentRoster?.noticeIssueDate ? formatDateDot(currentRoster.noticeIssueDate) : '14.08.2026';
-  // Work period: Monday to Saturday
+  // Compute exact Friday Issue Date
+  const issueDateFormatted = currentRoster?.noticeIssueDate
+    ? formatDateDot(currentRoster.noticeIssueDate)
+    : (currentRoster?.weekStartDate
+        ? formatDateDot(new Date(new Date(currentRoster.weekStartDate).getTime() - 3 * 24 * 60 * 60 * 1000))
+        : '14.08.2026');
+
+  // Compute exact Monday to Saturday work period dates
   const startDateFormatted = currentRoster?.weekStartDate ? formatDateSlash(currentRoster.weekStartDate) : '17/08/2026';
   const endDateFormatted = currentRoster?.weekEndDate ? formatDateSlash(currentRoster.weekEndDate) : '22/08/2026';
   const noticeRefNo = currentRoster?.noticeRefNo || 'PC12/XR/004';
@@ -173,7 +185,7 @@ const ShiftRosterNotice = () => {
           <div>
             <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0 }}>MPP Section Weekly Shift Notice Board</h2>
             <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>
-              Official Notice Ref: <strong>{noticeRefNo}</strong> • Issue Date (Friday): <strong>{issueDateFormatted}</strong>
+              Ref: <strong>{noticeRefNo}</strong> • Issue Date (Friday): <strong>{issueDateFormatted}</strong> • Work Period: <strong>{startDateFormatted} - {endDateFormatted}</strong>
             </p>
           </div>
         </div>
@@ -186,7 +198,7 @@ const ShiftRosterNotice = () => {
               disabled={currentIndex >= rosterList.length - 1}
               className="btn btn-secondary"
               style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}
-              title="View Earlier Previous Week Notice"
+              title="View Previous Week Notice"
             >
               <ChevronLeft size={16} /> Previous Week
             </button>
@@ -198,7 +210,7 @@ const ShiftRosterNotice = () => {
               disabled={currentIndex <= 0}
               className="btn btn-secondary"
               style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}
-              title="View Next Generated Week Notice"
+              title="View Next Week Notice"
             >
               Next Week <ChevronRight size={16} />
             </button>
@@ -211,7 +223,7 @@ const ShiftRosterNotice = () => {
               className="btn btn-primary"
               style={{ padding: '0.4rem 0.85rem', fontSize: '0.85rem', backgroundColor: '#6366f1' }}
             >
-              <Zap size={16} /> {generating ? 'Generating...' : 'Auto-Generate Next Week Shift Notice'}
+              <Zap size={16} /> {generating ? 'Generating...' : '⚡ Generate Next Week Shift Notice'}
             </button>
           )}
 
@@ -242,108 +254,106 @@ const ShiftRosterNotice = () => {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
           
-          {/* 📄 NOTICE SHEET 1: PRODUCTION UNIT 2 (MPP) */}
-          {(selectedUnit === 'Unit 2' || selectedUnit === 'All') && (
-            <div className="card notice-sheet" style={{
-              backgroundColor: '#ffffff',
-              color: '#000000',
-              padding: '2.5rem 3rem',
-              borderRadius: '4px',
-              fontFamily: 'serif, sans-serif',
-              boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-              border: '1px solid #ccc'
-            }}>
-              {/* Header */}
-              <div style={{ textAlign: 'center', marginBottom: '1.2rem', borderBottom: '2px solid #000', paddingBottom: '0.5rem' }}>
-                <h1 style={{ fontSize: '1.7rem', fontWeight: 'bold', margin: 0 }}>
-                  കെൽട്രോൺ കോംപണന്റ് കോംപ്ലക്സ് ലിമിറ്റഡ്
-                </h1>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', margin: '0.2rem 0' }}>കുറിപ്പ്</h3>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginTop: '0.5rem', fontWeight: 'bold' }}>
-                  <span>പ്രേഷകർ: ഉല്പാദനയൂണിറ്റ് 2 (MPP)</span>
-                  <span>സൂചന: {noticeRefNo}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', fontWeight: 'bold' }}>
-                  <span>സ്വീക: ഭരണനിർവഹണവകുപ്പ് / സുരക്ഷാവിഭാഗം/പകർപ്പ്</span>
-                  <span>തീയതി: {issueDateFormatted} (വെള്ളി)</span>
-                </div>
+          {/* 📄 NOTICE SHEET: PRODUCTION UNIT 2 (MPP) */}
+          <div className="card notice-sheet" style={{
+            backgroundColor: '#ffffff',
+            color: '#000000',
+            padding: '2.5rem 3rem',
+            borderRadius: '4px',
+            fontFamily: 'serif, sans-serif',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+            border: '1px solid #ccc'
+          }}>
+            {/* Header */}
+            <div style={{ textAlign: 'center', marginBottom: '1.2rem', borderBottom: '2px solid #000', paddingBottom: '0.5rem' }}>
+              <h1 style={{ fontSize: '1.7rem', fontWeight: 'bold', margin: 0 }}>
+                കെൽട്രോൺ കോംപണന്റ് കോംപ്ലക്സ് ലിമിറ്റഡ്
+              </h1>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', margin: '0.2rem 0' }}>കുറിപ്പ്</h3>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginTop: '0.5rem', fontWeight: 'bold' }}>
+                <span>പ്രേഷകർ: ഉല്പാദനയൂണിറ്റ് 2 (MPP)</span>
+                <span>സൂചന: {noticeRefNo}</span>
               </div>
-
-              {/* Subheading */}
-              <p style={{ fontSize: '0.95rem', fontWeight: 'bold', marginBottom: '1.5rem', lineHeight: '1.5' }}>
-                ഉല്പാദനയൂണിറ്റ് 2 ലെ തൊഴിലാളികൾ <strong>{startDateFormatted}</strong> (തിങ്കൾ) മുതൽ <strong>{endDateFormatted}</strong> (ശനി) വരെ തന്നിരിക്കുന്ന ഷിഫ്റ്റ് പ്രകാരം ജോലി ചെയ്യേണ്ടതാണെന്ന് അറിയിച്ചുകൊള്ളുന്നു.
-              </p>
-
-              {/* Shift 1 */}
-              <div style={{ marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #000', paddingBottom: '0.3rem', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>ഷിഫ്റ്റ്-1 (07.00AM-03.00PM)</span>
-                  <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>Shift in Charge: 3085 ബിപിൻ ഇ പി</span>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1rem' }}>
-                  {displayUnit2Shift1.map(item => (
-                    <div key={item.num} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', fontWeight: 'bold' }}>
-                      <span style={{ width: '380px' }}>
-                        {item.num}. &nbsp; {item.tokenNo} &nbsp; {item.name}
-                      </span>
-                      <span style={{ textAlign: 'left', width: '120px' }}>{item.machine}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Shift 2 */}
-              <div style={{ marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #000', paddingBottom: '0.3rem', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>ഷിഫ്റ്റ്-2 (03.00PM-11.00 PM)</span>
-                  <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>Shift in Charge: 851 രാഹുൽ.</span>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1rem' }}>
-                  {displayUnit2Shift2.map(item => (
-                    <div key={item.num} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', fontWeight: 'bold' }}>
-                      <span style={{ width: '380px' }}>
-                        {item.num}. &nbsp; {item.tokenNo} &nbsp; {item.name}
-                      </span>
-                      <span style={{ textAlign: 'left', width: '120px' }}>{item.machine}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Shift 3 */}
-              <div style={{ marginBottom: '1.5rem' }}>
-                <div style={{ borderBottom: '1px solid #000', paddingBottom: '0.3rem', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>ഷിഫ്റ്റ്-3 (11.00 PM-07.00 AM)</span>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1rem' }}>
-                  {displayUnit2Shift3.map(item => (
-                    <div key={item.num} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', fontWeight: 'bold' }}>
-                      <span style={{ width: '380px' }}>
-                        {item.num}. &nbsp; {item.tokenNo} &nbsp; {item.name}
-                      </span>
-                      <span style={{ textAlign: 'left', width: '120px' }}>{item.machine}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Footer Note */}
-              <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px dashed #000' }}>
-                <p style={{ fontSize: '0.9rem', fontWeight: 'bold', margin: 0 }}>
-                  NB: മറ്റുമുള്ള ജീവനക്കാർ ജനറൽ ഷിഫ്റ്റിൽ ജോലി ചെയ്യേണ്ടതാണെന്ന് അറിയിച്ചു കൊള്ളുന്നു.
-                </p>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2.5rem', fontSize: '0.95rem', fontWeight: 'bold' }}>
-                  <span>എസ്. എ. സി.</span>
-                  <span>വകുപ്പ്മേധാവി</span>
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                <span>സ്വീക: ഭരണനിർവഹണവകുപ്പ് / സുരക്ഷാവിഭാഗം/പകർപ്പ്</span>
+                <span>തീയതി: {issueDateFormatted}</span>
               </div>
             </div>
-          )}
+
+            {/* Subheading */}
+            <p style={{ fontSize: '0.95rem', fontWeight: 'bold', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+              ഉല്പാദനയൂണിറ്റ് 2 ലെ തൊഴിലാളികൾ <strong>{startDateFormatted}</strong> മുതൽ <strong>{endDateFormatted}</strong> വരെ തന്നിരിക്കുന്ന ഷിഫ്റ്റ് പ്രകാരം ജോലി ചെയ്യേണ്ടതാണെന്ന് അറിയിച്ചുകൊള്ളുന്നു.
+            </p>
+
+            {/* Shift 1 */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #000', paddingBottom: '0.3rem', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>ഷിഫ്റ്റ്-1 (07.00AM-03.00PM)</span>
+                <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>Shift in Charge: 3085 ബിപിൻ ഇ പി</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1rem' }}>
+                {displayUnit2Shift1.map(item => (
+                  <div key={item.num} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', fontWeight: 'bold' }}>
+                    <span style={{ width: '380px' }}>
+                      {item.num}. &nbsp; {item.tokenNo} &nbsp; {item.name}
+                    </span>
+                    <span style={{ textAlign: 'left', width: '120px' }}>{item.machine}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Shift 2 */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #000', paddingBottom: '0.3rem', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>ഷിഫ്റ്റ്-2 (03.00PM-11.00 PM)</span>
+                <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>Shift in Charge: 851 രാഹുൽ.</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1rem' }}>
+                {displayUnit2Shift2.map(item => (
+                  <div key={item.num} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', fontWeight: 'bold' }}>
+                    <span style={{ width: '380px' }}>
+                      {item.num}. &nbsp; {item.tokenNo} &nbsp; {item.name}
+                    </span>
+                    <span style={{ textAlign: 'left', width: '120px' }}>{item.machine}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Shift 3 */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ borderBottom: '1px solid #000', paddingBottom: '0.3rem', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>ഷിഫ്റ്റ്-3 (11.00 PM-07.00 AM)</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1rem' }}>
+                {displayUnit2Shift3.map(item => (
+                  <div key={item.num} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', fontWeight: 'bold' }}>
+                    <span style={{ width: '380px' }}>
+                      {item.num}. &nbsp; {item.tokenNo} &nbsp; {item.name}
+                    </span>
+                    <span style={{ textAlign: 'left', width: '120px' }}>{item.machine}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer Note */}
+            <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px dashed #000' }}>
+              <p style={{ fontSize: '0.9rem', fontWeight: 'bold', margin: 0 }}>
+                NB: മറ്റുമുള്ള ജീവനക്കാർ ജനറൽ ഷിഫ്റ്റിൽ ജോലി ചെയ്യേണ്ടതാണെന്ന് അറിയിച്ചു കൊള്ളുന്നു.
+              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2.5rem', fontSize: '0.95rem', fontWeight: 'bold' }}>
+                <span>എസ്. എ. സി.</span>
+                <span>വകുപ്പ്മേധാവി</span>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
