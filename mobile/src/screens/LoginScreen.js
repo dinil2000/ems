@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,12 +12,41 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE, FALLBACK_API_BASE } from '../config/api';
+import { DEFAULT_LAN_IP, getApiUrlList } from '../config/api';
 
 export default function LoginScreen({ onLoginSuccess }) {
   const [tokenOrEmail, setTokenOrEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // Server IP Settings State
+  const [showServerConfig, setShowServerConfig] = useState(false);
+  const [serverIp, setServerIp] = useState(DEFAULT_LAN_IP);
+
+  useEffect(() => {
+    const loadCustomIp = async () => {
+      const savedIp = await AsyncStorage.getItem('ems_custom_api_url');
+      if (savedIp) {
+        setServerIp(savedIp);
+      }
+    };
+    loadCustomIp();
+  }, []);
+
+  const handleSaveServerIp = async () => {
+    let formattedIp = serverIp.trim();
+    if (!formattedIp.startsWith('http')) {
+      formattedIp = `http://${formattedIp}`;
+    }
+    if (!formattedIp.endsWith('/api')) {
+      formattedIp = `${formattedIp.replace(/\/$/, '')}/api`;
+    }
+
+    setServerIp(formattedIp);
+    await AsyncStorage.setItem('ems_custom_api_url', formattedIp);
+    setShowServerConfig(false);
+    Alert.alert('Server IP Saved', `Backend target set to:\n${formattedIp}`);
+  };
 
   const handleLogin = async () => {
     if (!tokenOrEmail || !password) {
@@ -29,19 +58,21 @@ export default function LoginScreen({ onLoginSuccess }) {
     let success = false;
     let errMessage = '';
 
-    // Attempt primary API URL first, fallback to secondary
-    const urls = [API_BASE, FALLBACK_API_BASE, 'http://localhost:5000/api'];
+    const urlList = await getApiUrlList();
+    // Prioritize user's serverIp
+    const targetUrls = [serverIp, ...urlList.filter(u => u !== serverIp)];
 
-    for (const url of urls) {
+    for (const url of targetUrls) {
       try {
         const res = await axios.post(`${url}/auth/login`, {
           tokenOrEmail,
           password,
-        });
+        }, { timeout: 8000 });
 
         const { token, user } = res.data;
         await AsyncStorage.setItem('ems_token', token);
         await AsyncStorage.setItem('ems_user', JSON.stringify(user));
+        await AsyncStorage.setItem('ems_active_api_url', url);
         
         success = true;
         setLoading(false);
@@ -54,7 +85,10 @@ export default function LoginScreen({ onLoginSuccess }) {
 
     if (!success) {
       setLoading(false);
-      Alert.alert('Login Failed', errMessage || 'Unable to connect to backend server. Make sure server is running on port 5000.');
+      Alert.alert(
+        'Network Connection Error',
+        `Unable to connect to backend server at:\n${serverIp}\n\nMake sure:\n1. Your phone & PC are on the SAME Wi-Fi network.\n2. Your PC backend is running on port 5000.\n\nTap "⚙️ Server IP Settings" below to update your PC's Wi-Fi IP address!`
+      );
     }
   };
 
@@ -132,6 +166,36 @@ export default function LoginScreen({ onLoginSuccess }) {
               <Text style={styles.quickChipText}>👷 Worker: Token 8709 (pass: admin)</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Server IP Configurator Trigger */}
+          <TouchableOpacity
+            style={styles.configToggle}
+            onPress={() => setShowServerConfig(!showServerConfig)}
+          >
+            <Text style={styles.configToggleText}>
+              ⚙️ Server IP Settings ({serverIp})
+            </Text>
+          </TouchableOpacity>
+
+          {showServerConfig && (
+            <View style={styles.configBox}>
+              <Text style={styles.configTitle}>Backend Server Address</Text>
+              <Text style={styles.configDesc}>
+                Enter your PC's local Wi-Fi IP address (port 5000):
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={serverIp}
+                onChangeText={setServerIp}
+                placeholder="http://10.174.154.52:5000/api"
+                placeholderTextColor="#64748b"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity style={styles.saveIpBtn} onPress={handleSaveServerIp}>
+                <Text style={styles.saveIpText}>Save Server Address</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         <Text style={styles.footerNote}>
@@ -223,7 +287,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   quickFillContainer: {
-    marginTop: 20,
+    marginTop: 18,
     backgroundColor: '#090d16',
     borderRadius: 10,
     padding: 12,
@@ -247,6 +311,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#e2e8f0',
     fontWeight: '600',
+  },
+  configToggle: {
+    marginTop: 16,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  configToggleText: {
+    fontSize: 12,
+    color: '#38bdf8',
+    fontWeight: '600',
+  },
+  configBox: {
+    marginTop: 10,
+    backgroundColor: '#090d16',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+  },
+  configTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#f8fafc',
+    marginBottom: 4,
+  },
+  configDesc: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginBottom: 10,
+  },
+  saveIpBtn: {
+    backgroundColor: '#10b981',
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  saveIpText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   footerNote: {
     textAlign: 'center',

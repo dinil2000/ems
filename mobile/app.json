@@ -15,7 +15,8 @@
       "adaptiveIcon": {
         "backgroundColor": "#0f172a"
       },
-      "package": "com.keltron.mpp.ems"
+      "package": "com.keltron.mpp.ems",
+      "usesCleartextTraffic": true
     },
     "extra": {
       "eas": {

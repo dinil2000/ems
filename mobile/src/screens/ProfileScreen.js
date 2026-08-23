@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE, FALLBACK_API_BASE } from '../config/api';
+import { getApiUrlList } from '../config/api';
 
 export default function ProfileScreen({ user, onBack, onUserUpdate }) {
   const profile = user?.employeeProfile || {};
@@ -32,7 +32,7 @@ export default function ProfileScreen({ user, onBack, onUserUpdate }) {
   const handleSaveProfile = async () => {
     setLoading(true);
     try {
-      const urls = [API_BASE, FALLBACK_API_BASE, 'http://localhost:5000/api'];
+      const urls = await getApiUrlList();
       let res = null;
       for (const url of urls) {
         try {
@@ -40,7 +40,7 @@ export default function ProfileScreen({ user, onBack, onUserUpdate }) {
             name,
             qualification,
             experienceYears: parseInt(experienceYears) || 0,
-          });
+          }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
       }
@@ -58,6 +58,8 @@ export default function ProfileScreen({ user, onBack, onUserUpdate }) {
         await AsyncStorage.setItem('ems_user', JSON.stringify(updatedUser));
         onUserUpdate(updatedUser);
         Alert.alert('Profile Updated', 'Your profile details have been saved successfully.');
+      } else {
+        Alert.alert('Network Error', 'Unable to connect to server. Check Wi-Fi connection.');
       }
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || err.message);
@@ -78,7 +80,7 @@ export default function ProfileScreen({ user, onBack, onUserUpdate }) {
 
     setLoading(true);
     try {
-      const urls = [API_BASE, FALLBACK_API_BASE, 'http://localhost:5000/api'];
+      const urls = await getApiUrlList();
       let res = null;
       for (const url of urls) {
         try {
@@ -86,7 +88,7 @@ export default function ProfileScreen({ user, onBack, onUserUpdate }) {
             tokenNo: user.employeeToken,
             currentPassword,
             newPassword,
-          });
+          }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
       }
@@ -96,6 +98,8 @@ export default function ProfileScreen({ user, onBack, onUserUpdate }) {
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
+      } else {
+        Alert.alert('Network Error', 'Unable to connect to server. Check Wi-Fi connection.');
       }
     } catch (err) {
       Alert.alert('Change Password Failed', err.response?.data?.message || err.message);

@@ -10,7 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import axios from 'axios';
-import { API_BASE, FALLBACK_API_BASE } from '../config/api';
+import { getApiUrlList } from '../config/api';
 
 export default function HomeScreen({ user, onLogout, onNavigate }) {
   const [clockTime, setClockTime] = useState(new Date().toLocaleTimeString());
@@ -27,10 +27,10 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
   const fetchStatus = async () => {
     try {
-      const urls = [API_BASE, FALLBACK_API_BASE, 'http://localhost:5000/api'];
+      const urls = await getApiUrlList();
       for (const url of urls) {
         try {
-          const res = await axios.get(`${url}/attendance/employee/${user.employeeToken}`);
+          const res = await axios.get(`${url}/attendance/employee/${user.employeeToken}`, { timeout: 6000 });
           if (res.data && res.data.length > 0) {
             setAttendance(res.data[0]);
           }
@@ -55,13 +55,13 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
   const handlePunchIn = async () => {
     setLoading(true);
     try {
-      const urls = [API_BASE, FALLBACK_API_BASE, 'http://localhost:5000/api'];
+      const urls = await getApiUrlList();
       let res = null;
       for (const url of urls) {
         try {
           res = await axios.post(`${url}/attendance/punch-in`, {
             tokenNo: user.employeeToken,
-          });
+          }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
       }
@@ -69,6 +69,8 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
       if (res) {
         Alert.alert('Punch In Success', res.data.message);
         fetchStatus();
+      } else {
+        Alert.alert('Network Error', 'Unable to connect to server. Check Wi-Fi connection.');
       }
     } catch (err) {
       Alert.alert('Punch Failed', err.response?.data?.message || err.message);
@@ -80,13 +82,13 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
   const handlePunchOut = async () => {
     setLoading(true);
     try {
-      const urls = [API_BASE, FALLBACK_API_BASE, 'http://localhost:5000/api'];
+      const urls = await getApiUrlList();
       let res = null;
       for (const url of urls) {
         try {
           res = await axios.post(`${url}/attendance/punch-out`, {
             tokenNo: user.employeeToken,
-          });
+          }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
       }
@@ -94,6 +96,8 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
       if (res) {
         Alert.alert('Punch Out Success', res.data.message);
         fetchStatus();
+      } else {
+        Alert.alert('Network Error', 'Unable to connect to server. Check Wi-Fi connection.');
       }
     } catch (err) {
       Alert.alert('Punch Out Failed', err.response?.data?.message || err.message);
