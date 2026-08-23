@@ -12,22 +12,24 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_LAN_IP, getApiUrlList } from '../config/api';
+import { VERCEL_CLOUD_API, getApiUrlList } from '../config/api';
 
 export default function LoginScreen({ onLoginSuccess }) {
   const [tokenOrEmail, setTokenOrEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   
-  // Server IP Settings State
+  // Server IP Settings State - Default to production Vercel Cloud API
   const [showServerConfig, setShowServerConfig] = useState(false);
-  const [serverIp, setServerIp] = useState(DEFAULT_LAN_IP);
+  const [serverIp, setServerIp] = useState(VERCEL_CLOUD_API);
 
   useEffect(() => {
     const loadCustomIp = async () => {
       const savedIp = await AsyncStorage.getItem('ems_custom_api_url');
       if (savedIp) {
         setServerIp(savedIp);
+      } else {
+        setServerIp(VERCEL_CLOUD_API);
       }
     };
     loadCustomIp();
@@ -36,7 +38,7 @@ export default function LoginScreen({ onLoginSuccess }) {
   const handleSaveServerIp = async () => {
     let formattedIp = serverIp.trim();
     if (!formattedIp.startsWith('http')) {
-      formattedIp = `http://${formattedIp}`;
+      formattedIp = `https://${formattedIp}`;
     }
     if (!formattedIp.endsWith('/api')) {
       formattedIp = `${formattedIp.replace(/\/$/, '')}/api`;
@@ -45,7 +47,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     setServerIp(formattedIp);
     await AsyncStorage.setItem('ems_custom_api_url', formattedIp);
     setShowServerConfig(false);
-    Alert.alert('Server IP Saved', `Backend target set to:\n${formattedIp}`);
+    Alert.alert('Cloud Server URL Saved', `Backend target set to:\n${formattedIp}`);
   };
 
   const handleLogin = async () => {
@@ -59,7 +61,6 @@ export default function LoginScreen({ onLoginSuccess }) {
     let errMessage = '';
 
     const urlList = await getApiUrlList();
-    // Prioritize user's serverIp
     const targetUrls = [serverIp, ...urlList.filter(u => u !== serverIp)];
 
     for (const url of targetUrls) {
@@ -67,7 +68,7 @@ export default function LoginScreen({ onLoginSuccess }) {
         const res = await axios.post(`${url}/auth/login`, {
           tokenOrEmail,
           password,
-        }, { timeout: 8000 });
+        }, { timeout: 10000 });
 
         const { token, user } = res.data;
         await AsyncStorage.setItem('ems_token', token);
@@ -86,8 +87,8 @@ export default function LoginScreen({ onLoginSuccess }) {
     if (!success) {
       setLoading(false);
       Alert.alert(
-        'Network Connection Error',
-        `Unable to connect to backend server at:\n${serverIp}\n\nMake sure:\n1. Your phone & PC are on the SAME Wi-Fi network.\n2. Your PC backend is running on port 5000.\n\nTap "⚙️ Server IP Settings" below to update your PC's Wi-Fi IP address!`
+        'Login Connection Error',
+        `Unable to connect to cloud server at:\n${serverIp}\n\nError: ${errMessage}\n\nMake sure your phone has mobile data/Wi-Fi connected!`
       );
     }
   };
@@ -137,7 +138,7 @@ export default function LoginScreen({ onLoginSuccess }) {
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Sign In to Mobile App</Text>
+              <Text style={styles.buttonText}>Sign In to Cloud App</Text>
             )}
           </TouchableOpacity>
 
@@ -173,7 +174,7 @@ export default function LoginScreen({ onLoginSuccess }) {
             onPress={() => setShowServerConfig(!showServerConfig)}
           >
             <Text style={styles.configToggleText}>
-              ⚙️ Server IP Settings ({serverIp})
+              🌐 Cloud Backend: {serverIp}
             </Text>
           </TouchableOpacity>
 
@@ -181,13 +182,13 @@ export default function LoginScreen({ onLoginSuccess }) {
             <View style={styles.configBox}>
               <Text style={styles.configTitle}>Backend Server Address</Text>
               <Text style={styles.configDesc}>
-                Enter your PC's local Wi-Fi IP address (port 5000):
+                Production Vercel Cloud Server URL:
               </Text>
               <TextInput
                 style={styles.input}
                 value={serverIp}
                 onChangeText={setServerIp}
-                placeholder="http://10.174.154.52:5000/api"
+                placeholder="https://mppems.vercel.app/api"
                 placeholderTextColor="#64748b"
                 autoCapitalize="none"
               />
@@ -318,7 +319,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   configToggleText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#38bdf8',
     fontWeight: '600',
   },
