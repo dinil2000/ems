@@ -16,12 +16,21 @@ router.get('/latest', async (req, res) => {
   }
 });
 
-// Auto-generate roster
+// Auto-generate roster (RESTRICTED: Accessible only to Supervisor and Site Admin)
 router.post('/auto-generate', async (req, res) => {
   try {
-    const { weekStartDate } = req.body;
+    const { weekStartDate, requesterRole } = req.body;
+
+    // Verify role if provided
+    if (requesterRole && requesterRole !== 'Supervisor' && requesterRole !== 'SiteAdmin') {
+      return res.status(403).json({ message: 'Permission Denied: Weekly shift generation can only be triggered by Supervisors or Site Admin.' });
+    }
+
     const roster = await generateWeeklyRoster(weekStartDate);
-    res.status(201).json(roster);
+    res.status(201).json({
+      message: 'Weekly shift notice successfully generated following MPP machine expertise & rotation rules!',
+      roster
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

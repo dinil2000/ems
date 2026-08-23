@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { Printer, Calendar, ShieldCheck, RefreshCw, Cpu, Layers } from 'lucide-react';
+import { Printer, Calendar, ShieldCheck, RefreshCw, Cpu, Layers, Zap } from 'lucide-react';
 
 const ShiftRosterNotice = () => {
   const { user, API_BASE } = useContext(AuthContext);
   const [roster, setRoster] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [genMessage, setGenMessage] = useState('');
   const [selectedUnit, setSelectedUnit] = useState('Unit 2'); // 'Unit 1', 'Unit 2', or 'All'
 
   const fetchRoster = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_BASE}/shifts/current`);
+      const res = await axios.get(`${API_BASE}/shifts/latest`);
       setRoster(res.data);
     } catch (err) {
       console.error('Error fetching roster notice:', err);
@@ -27,6 +29,25 @@ const ShiftRosterNotice = () => {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleGenerateRoster = async () => {
+    if (!window.confirm('Generate new automated weekly shift schedule based on machine expertise, monthly rotation, and 6-worker Night Shift rules?')) {
+      return;
+    }
+    setGenerating(true);
+    setGenMessage('');
+    try {
+      const res = await axios.post(`${API_BASE}/shifts/auto-generate`, {
+        requesterRole: user?.role
+      });
+      setGenMessage(`✅ ${res.data.message}`);
+      fetchRoster();
+    } catch (err) {
+      setGenMessage(`❌ Shift Generation Failed: ${err.response?.data?.message || err.message}`);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   // Helper to format date in DD/MM/YYYY
@@ -76,12 +97,12 @@ const ShiftRosterNotice = () => {
   ];
 
   const unit2Shift3 = [
-    { num: 18, tokenNo: '8713', name: 'യദുകൃഷ്ണ.എം.', machine: '700,705' },
-    { num: 19, tokenNo: '8771', name: 'അഭിനവ്', machine: '710' },
-    { num: 20, tokenNo: '8770', name: 'അജിത് ഗോപി', machine: '766' },
-    { num: 21, tokenNo: '8794', name: 'അഭയരാജ്', machine: '' },
-    { num: 22, tokenNo: '8793', name: 'അമൽ രാജ്', machine: '' },
-    { num: 23, tokenNo: '8788', name: 'ദീക്ഷിത്', machine: '' },
+    { num: 18, tokenNo: '8713', name: 'യദുകൃഷ്ണ.എം.', machine: '700,705 (Winding)' },
+    { num: 19, tokenNo: '8771', name: 'അഭിനവ്', machine: '710 (Testing)' },
+    { num: 20, tokenNo: '8770', name: 'അജിത് ഗോപി', machine: '766 (Metalizing)' },
+    { num: 21, tokenNo: '8794', name: 'അഭയരാജ്', machine: '766 (Metalizing)' },
+    { num: 22, tokenNo: '8793', name: 'അമൽ രാജ്', machine: '766 (Metalizing)' },
+    { num: 23, tokenNo: '8788', name: 'ദീക്ഷിത്', machine: '766 (Metalizing)' },
   ];
 
   // Unit 1 Employees per shift (Matches official notice sheet 2)
@@ -106,6 +127,8 @@ const ShiftRosterNotice = () => {
     { num: 7, tokenNo: '8752', name: 'ഹൃദ്യുൽ. കെ', machine: '' },
     { num: 8, tokenNo: '491', name: 'അശ്വന്ത്', machine: '' },
   ];
+
+  const canGenerateShift = user && (user.role === 'Supervisor' || user.role === 'SiteAdmin');
 
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '1rem' }}>
@@ -156,11 +179,36 @@ const ShiftRosterNotice = () => {
             </button>
           </div>
 
+          {canGenerateShift && (
+            <button
+              onClick={handleGenerateRoster}
+              disabled={generating}
+              className="btn btn-primary"
+              style={{ padding: '0.4rem 0.85rem', fontSize: '0.85rem', backgroundColor: '#6366f1' }}
+            >
+              <Zap size={16} /> {generating ? 'Generating...' : 'Auto-Generate Shift Notice'}
+            </button>
+          )}
+
           <button onClick={handlePrint} className="btn btn-secondary" style={{ padding: '0.4rem 0.75rem' }}>
             <Printer size={16} /> Print Notice Board
           </button>
         </div>
       </div>
+
+      {genMessage && (
+        <div style={{
+          backgroundColor: genMessage.includes('✅') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+          color: genMessage.includes('✅') ? '#34d399' : '#f87171',
+          border: genMessage.includes('✅') ? '1px solid #10b981' : '1px solid #f43f5e',
+          padding: '0.75rem 1rem',
+          borderRadius: '8px',
+          marginBottom: '1.25rem',
+          fontSize: '0.85rem'
+        }}>
+          {genMessage}
+        </div>
+      )}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
@@ -240,10 +288,10 @@ const ShiftRosterNotice = () => {
                 </div>
               </div>
 
-              {/* Shift 3 */}
+              {/* Shift 3 - Night Shift (Strict 6 Workers Rule) */}
               <div style={{ marginBottom: '1.5rem' }}>
                 <div style={{ borderBottom: '1px solid #000', paddingBottom: '0.3rem', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>ഷിഫ്റ്റ്-3 (11.00 PM-07.00 AM)</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>ഷിഫ്റ്റ്-3 (11.00 PM-07.00 AM) - Night Shift (6 Workers Crew)</span>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1rem' }}>
@@ -252,7 +300,7 @@ const ShiftRosterNotice = () => {
                       <span style={{ width: '380px' }}>
                         {item.num}. &nbsp; {item.tokenNo} &nbsp; {item.name}
                       </span>
-                      <span style={{ textAlign: 'left', width: '120px' }}>{item.machine}</span>
+                      <span style={{ textAlign: 'left', width: '180px' }}>{item.machine}</span>
                     </div>
                   ))}
                 </div>

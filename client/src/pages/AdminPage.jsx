@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { ShieldAlert, UserCheck, UserPlus, Key, CheckCircle, XCircle, Shield } from 'lucide-react';
+import { ShieldAlert, UserCheck, UserPlus, Key, CheckCircle, XCircle, Shield, UserMinus } from 'lucide-react';
 
 const AdminPage = () => {
   const { user, API_BASE } = useContext(AuthContext);
   const [pendingEmps, setPendingEmps] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
+  const [userRolesList, setUserRolesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
 
@@ -16,12 +17,14 @@ const AdminPage = () => {
   const loadAdminData = async () => {
     setLoading(true);
     try {
-      const [pendingRes, empRes] = await Promise.all([
+      const [pendingRes, empRes, usersRes] = await Promise.all([
         axios.get(`${API_BASE}/employees/pending`),
-        axios.get(`${API_BASE}/employees?status=Active`)
+        axios.get(`${API_BASE}/employees?status=Active`),
+        axios.get(`${API_BASE}/auth/users`)
       ]);
       setPendingEmps(pendingRes.data);
       setAllUsers(empRes.data);
+      setUserRolesList(usersRes.data);
     } catch (err) {
       console.error('Error loading admin data:', err);
     } finally {
@@ -57,7 +60,7 @@ const AdminPage = () => {
     }
   };
 
-  // Appoint Supervisor by ONLY providing Token Number!
+  // Appoint / Promote Supervisor by Token Number
   const handleCreateSupervisor = async (e) => {
     e.preventDefault();
     if (!supTokenNo) {
@@ -69,6 +72,21 @@ const AdminPage = () => {
       const res = await axios.post(`${API_BASE}/auth/create-supervisor`, { tokenNo: supTokenNo });
       setMessage(`✅ ${res.data.message}`);
       setSupTokenNo('');
+      loadAdminData();
+    } catch (err) {
+      setMessage(`❌ Failed: ${err.response?.data?.message || err.message}`);
+    }
+  };
+
+  // Demote Supervisor to Employee position
+  const handleDemoteSupervisor = async (tokenNo) => {
+    if (!window.confirm(`Are you sure you want to demote Supervisor (Token #${tokenNo}) to Employee position?`)) {
+      return;
+    }
+    setMessage('');
+    try {
+      const res = await axios.post(`${API_BASE}/auth/demote-supervisor`, { tokenNo });
+      setMessage(`✅ ${res.data.message}`);
       loadAdminData();
     } catch (err) {
       setMessage(`❌ Failed: ${err.response?.data?.message || err.message}`);
@@ -95,13 +113,13 @@ const AdminPage = () => {
               Site Admin Master Operations Control Portal (/admin)
             </h1>
             <p style={{ fontSize: '0.85rem', color: '#818cf8', margin: '0.2rem 0 0 0' }}>
-              Full Control • Appoint Supervisors by Token # • Approve Pending Registrations
+              Full Control • Promote & Demote Supervisors • Manage Member Accounts
             </p>
           </div>
         </div>
 
         <span className="badge badge-indigo" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-          Role: UNIQUE SITE ADMIN
+          Role: UNIQUE ROOT SITE ADMIN
         </span>
       </div>
 
@@ -196,28 +214,63 @@ const AdminPage = () => {
             )}
           </div>
 
-          {/* Active Employee Roster */}
+          {/* Active Employee Roster & Role Control */}
           <div className="card">
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem' }}>Active Staff & Machine Allocations</h3>
-            <div className="table-container" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem' }}>Registered Staff & Role Position Control</h3>
+            <div className="table-container" style={{ maxHeight: '350px', overflowY: 'auto' }}>
               <table>
                 <thead>
                   <tr>
                     <th>Token #</th>
                     <th>Name</th>
-                    <th>Qualification</th>
-                    <th>Monthly Pay</th>
-                    <th>Status</th>
+                    <th>Role Position</th>
+                    <th>Machine Expertise</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {allUsers.map(emp => (
-                    <tr key={emp._id}>
-                      <td><strong>#{emp.tokenNo}</strong></td>
-                      <td>{emp.name}</td>
-                      <td>{emp.qualification} ({emp.experienceYears} yrs)</td>
-                      <td style={{ color: '#34d399', fontWeight: 600 }}>₹{emp.basicSalary?.toLocaleString('en-IN')}</td>
-                      <td><span className="badge badge-emerald">{emp.status}</span></td>
+                  {userRolesList.map(usr => (
+                    <tr key={usr._id}>
+                      <td><strong>#{usr.employeeToken}</strong></td>
+                      <td>{usr.employeeProfile?.name || 'Site Admin'}</td>
+                      <td>
+                        <span className={`badge ${usr.role === 'SiteAdmin' ? 'badge-indigo' : usr.role === 'Supervisor' ? 'badge-cyan' : 'badge-emerald'}`}>
+                          {usr.role}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem' }}>
+                          {usr.employeeProfile?.machineExpertise?.map((m, idx) => (
+                            <span key={idx} className="badge badge-amber" style={{ fontSize: '0.65rem' }}>
+                              #{m}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        {usr.role === 'Supervisor' ? (
+                          <button
+                            onClick={() => handleDemoteSupervisor(usr.employeeToken)}
+                            className="btn btn-danger"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                          >
+                            <UserMinus size={13} /> Demote to Employee
+                          </button>
+                        ) : usr.role === 'Employee' ? (
+                          <button
+                            onClick={() => {
+                              setSupTokenNo(usr.employeeToken);
+                              handleCreateSupervisor({ preventDefault: () => {} });
+                            }}
+                            className="btn btn-primary"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                          >
+                            <UserPlus size={13} /> Promote to Supervisor
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 700 }}>Master Root</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -231,7 +284,7 @@ const AdminPage = () => {
           <div className="card" style={{ borderLeft: '4px solid #6366f1' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
               <Key style={{ color: '#818cf8' }} size={22} />
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Appoint Supervisor Account</h3>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Appoint / Promote Supervisor</h3>
             </div>
             <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '1.25rem' }}>
               Enter or select an <strong>Employee Token Number</strong> to promote them to Supervisor:
@@ -242,7 +295,7 @@ const AdminPage = () => {
                 <label className="form-label">Employee Token Number *</label>
                 <input
                   type="text"
-                  placeholder="e.g. 8709 or 8356"
+                  placeholder="e.g. 8709 or 3085"
                   value={supTokenNo}
                   onChange={(e) => setSupTokenNo(e.target.value)}
                   className="form-input"
@@ -256,8 +309,8 @@ const AdminPage = () => {
                 <label className="form-label" style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
                   Quick Select Token from Active Staff:
                 </label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.4rem', maxHeight: '100px', overflowY: 'auto' }}>
-                  {allUsers.slice(0, 10).map(e => (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.4rem', maxHeight: '120px', overflowY: 'auto' }}>
+                  {allUsers.slice(0, 15).map(e => (
                     <button
                       key={e._id}
                       type="button"
@@ -272,7 +325,7 @@ const AdminPage = () => {
               </div>
 
               <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem' }}>
-                <UserPlus size={18} /> Appoint as Supervisor
+                <UserPlus size={18} /> Promote to Supervisor
               </button>
             </form>
           </div>

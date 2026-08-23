@@ -1,7 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import RegisterEmployeeModal from '../components/RegisterEmployeeModal';
-import { Cpu, ShieldCheck, UserPlus, LogIn, Lock, User, KeyRound } from 'lucide-react';
+import { Cpu, UserPlus, LogIn, Lock, User } from 'lucide-react';
 
 const LoginPage = () => {
   const { login } = useContext(AuthContext);
@@ -27,11 +27,6 @@ const LoginPage = () => {
     if (!res.success) {
       setMessage(`❌ ${res.message}`);
     }
-  };
-
-  const handleQuickFill = (tokenVal, passVal) => {
-    setTokenOrEmail(tokenVal);
-    setPassword(passVal);
   };
 
   return (
@@ -82,11 +77,11 @@ const LoginPage = () => {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">Employee Token # or Email *</label>
+            <label className="form-label">Employee Punch Token # / Username *</label>
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
-                placeholder="e.g. ADMIN01, 3085, or 8709"
+                placeholder="Enter Token No (e.g. 8709, 3085) or admin"
                 value={tokenOrEmail}
                 onChange={(e) => setTokenOrEmail(e.target.value)}
                 className="form-input"
@@ -102,7 +97,7 @@ const LoginPage = () => {
             <div style={{ position: 'relative' }}>
               <input
                 type="password"
-                placeholder="Enter password"
+                placeholder="Enter password (default: admin)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="form-input"
@@ -118,47 +113,7 @@ const LoginPage = () => {
           </button>
         </form>
 
-        {/* Demo Quick Credentials Assistant */}
-        <div style={{
-          backgroundColor: '#090d16',
-          border: '1px solid #334155',
-          borderRadius: '8px',
-          padding: '0.85rem',
-          marginTop: '1.5rem',
-          fontSize: '0.78rem'
-        }}>
-          <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <KeyRound size={14} /> Account Credentials Helper:
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-            <div
-              onClick={() => handleQuickFill('ADMIN01', 'admin')}
-              style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', color: '#818cf8' }}
-            >
-              <span>🔑 <strong>Root Site Admin:</strong> ADMIN01</span>
-              <span>Pass: <code>admin</code></span>
-            </div>
-
-            <div
-              onClick={() => handleQuickFill('3085', 'mpp12345')}
-              style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', color: '#22d3ee' }}
-            >
-              <span>🛡️ <strong>Supervisor:</strong> Token 3085</span>
-              <span>Pass: <code>mpp12345</code></span>
-            </div>
-
-            <div
-              onClick={() => handleQuickFill('8709', 'mpp12345')}
-              style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', color: '#34d399' }}
-            >
-              <span>👷 <strong>Employee:</strong> Token 8709</span>
-              <span>Pass: <code>mpp12345</code></span>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ textAlign: 'center', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
+        <div style={{ textAlign: 'center', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
           <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.6rem' }}>
             New employee joining MPP section?
           </p>

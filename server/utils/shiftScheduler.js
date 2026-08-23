@@ -14,205 +14,132 @@ const generateWeeklyRoster = async (weekStartDateInput) => {
     throw new Error('Insufficient active employees or machines in database to generate roster.');
   }
 
-  // Fetch past 6 weeks of published shift rosters to calculate rotation & 3rd shift frequency
-  const pastRosters = await ShiftSchedule.find({ status: 'Published' }).sort({ weekStartDate: -1 }).limit(6);
+  // Count past published rosters to determine 4-week cycle rotation & Shift 3 frequency
+  const pastRostersCount = await ShiftSchedule.countDocuments({ status: 'Published' });
+  const cycleWeekNumber = (pastRostersCount % 5) + 1; // Weeks 1 to 5 (Week 5 is 3rd Shift cycle)
 
-  // Map employee ID -> { recentShift3Count, lastShiftType, shiftAssignmentCount }
-  const empHistory = {};
-  employees.forEach(e => {
-    empHistory[e._id.toString()] = {
-      tokenNo: e.tokenNo,
-      shift3CountMonth: 0,
-      lastShiftType: null,
-      totalAssignedCount: 0
-    };
-  });
-
-  // Calculate past shift counts (especially 3rd Shift in last 30 days)
-  const thirtyDaysAgo = new Date(weekStart.getTime() - 30 * 24 * 60 * 60 * 1000);
-  pastRosters.forEach(roster => {
-    const isWithinMonth = new Date(roster.weekStartDate) >= thirtyDaysAgo;
-
-    roster.shifts.forEach(slot => {
-      slot.allocations.forEach(alloc => {
-        if (alloc.assignedEmployees) {
-          alloc.assignedEmployees.forEach(emp => {
-            const empIdStr = emp.employeeId ? emp.employeeId.toString() : null;
-            if (empIdStr && empHistory[empIdStr]) {
-              empHistory[empIdStr].totalAssignedCount += 1;
-
-              if (slot.shiftType.includes('Shift-3') && isWithinMonth) {
-                empHistory[empIdStr].shift3CountMonth += 1;
-              }
-
-              if (!empHistory[empIdStr].lastShiftType) {
-                empHistory[empIdStr].lastShiftType = slot.shiftType;
-              }
-            }
-          });
-        }
-      });
-    });
-  });
-
-  // Separate Female employees for General Shift priority rule
+  // Separate Female employees for General Shift (08.30 AM - 04.30 PM)
   const femaleEmployees = employees.filter(e => e.gender === 'Female');
   const maleEmployees = employees.filter(e => e.gender !== 'Female');
 
-  // Track assigned employees for current week's roster
+  // Track assigned employee IDs for current week's roster
   const assignedEmpIds = new Set();
 
-  // Helper to select experts matching machine ID or Category with rotational fairness
-  const helperGetMultipleExperts = (targetMachine, pool, count, disallowShift3Repeat = false) => {
-    const machineId = targetMachine.machineId;
-    const category = targetMachine.category;
+  /**
+   * Helper: Select qualified employees for a machine based on EXACT machine expertise match.
+   * STRICT RULE: If an employee does not know a particular machine, DO NOT assign them!
+   */
+  const getQualifiedStaff = (targetMachine, pool, countToTake) => {
+    const mId = targetMachine.machineId;
 
-    // Filter candidate employees
-    let candidates = pool.filter(emp => {
-      const empId = emp._id.toString();
-      if (assignedEmpIds.has(empId)) return false;
+    // Filter candidate pool strictly by machine expertise
+    const qualifiedCandidates = pool.filter(emp => {
+      const empIdStr = emp._id.toString();
+      if (assignedEmpIds.has(empIdStr)) return false;
 
-      // Match by exact machineId OR category expertise
-      const knowMachine = emp.machineExpertise.includes(machineId) || 
-                          emp.machineExpertise.some(mId => {
-                            const mObj = machines.find(m => m.machineId === mId);
-                            return mObj && mObj.category === category;
-                          });
-      if (!knowMachine) return false;
+      // Strict expertise match: machineId must be present in emp.machineExpertise
+      const knowsMachine = Array.isArray(emp.machineExpertise) && (
+        emp.machineExpertise.includes(mId) ||
+        emp.machineExpertise.some(exp => exp.trim() === mId.trim())
+      );
 
-      // Max 1 Night Shift (Shift 3) in a month rule
-      if (disallowShift3Repeat && empHistory[empId].shift3CountMonth >= 1) {
-        return false;
-      }
-      return true;
+      return knowsMachine;
     });
 
-    // Sort candidates for fair rotation (lowest recent 3rd shift count & lowest total assignments)
-    candidates.sort((a, b) => {
-      const hA = empHistory[a._id.toString()];
-      const hB = empHistory[b._id.toString()];
-      if (hA.shift3CountMonth !== hB.shift3CountMonth) {
-        return hA.shift3CountMonth - hB.shift3CountMonth;
-      }
-      return hA.totalAssignedCount - hB.totalAssignedCount;
-    });
-
-    // Fallback if strict 3rd shift limit leaves insufficient crew
-    if (candidates.length < count && disallowShift3Repeat) {
-      const fallback = pool.filter(emp => {
-        const empId = emp._id.toString();
-        if (assignedEmpIds.has(empId)) return false;
-        return emp.machineExpertise.includes(machineId) || 
-               emp.machineExpertise.some(mId => {
-                 const mObj = machines.find(m => m.machineId === mId);
-                 return mObj && mObj.category === category;
-               });
-      });
-      return fallback.slice(0, count);
-    }
-
-    return candidates.slice(0, count);
+    // Take required count
+    const selected = qualifiedCandidates.slice(0, countToTake);
+    selected.forEach(e => assignedEmpIds.add(e._id.toString()));
+    return selected;
   };
 
-  // 1. Build Shift-3 Allocation (11:00 PM - 07:00 AM) - MINIMAL STAFFING RULE WITH 3RD SHIFT MONTHLY LIMIT
-  // Staffing Rule: Winding: 1, Testing: 2, Metalizing: 4 (minimum crew for 1 metalizing machine)
+  // ==========================================
+  // SHIFT 3 (11.00 PM - 07.00 AM) - NIGHT SHIFT (5 to 6 Employees Only)
+  // RULE:
+  // - 1 employee in (700,705 - Winding)
+  // - 1 employee in (710 - Testing)
+  // - 4 employees in (766 - Metalizing)
+  // ==========================================
   const shift3Allocations = [];
 
-  // Minimal Winding: Exactly 1 Employee
-  const windingMachine = machines.find(m => m.category === 'Winding') || machines[0];
-  const windingStaff = helperGetMultipleExperts(windingMachine, maleEmployees, 1, true);
-  windingStaff.forEach(e => assignedEmpIds.add(e._id.toString()));
+  // 1. Winding (700,705): 1 Employee
+  const machineWinding700 = machines.find(m => m.machineId === '700,705' || m.category === 'Winding') || { machineId: '700,705', name: 'Winding 700/705', category: 'Winding' };
+  const windingStaffShift3 = getQualifiedStaff(machineWinding700, maleEmployees, 1);
   shift3Allocations.push({
-    machineId: windingMachine.machineId,
-    machineName: windingMachine.name,
-    category: windingMachine.category,
-    assignedEmployees: windingStaff.map(e => ({ employeeId: e._id, tokenNo: e.tokenNo, name: e.name })),
+    machineId: machineWinding700.machineId,
+    machineName: machineWinding700.name,
+    category: machineWinding700.category,
+    assignedEmployees: windingStaffShift3.map(e => ({ employeeId: e._id, tokenNo: e.tokenNo, name: e.name })),
   });
 
-  // Minimal Testing: Exactly 2 Employees (Testing crew requirement = 2)
-  const testingMachine = machines.find(m => m.category === 'Testing') || machines[1];
-  const testingStaff = helperGetMultipleExperts(testingMachine, maleEmployees, 2, true);
-  testingStaff.forEach(e => assignedEmpIds.add(e._id.toString()));
+  // 2. Testing (710): 1 Employee
+  const machineTesting710 = machines.find(m => m.machineId === '710' || m.category === 'Testing') || { machineId: '710', name: 'Testing 710', category: 'Testing' };
+  const testingStaffShift3 = getQualifiedStaff(machineTesting710, maleEmployees, 1);
   shift3Allocations.push({
-    machineId: testingMachine.machineId,
-    machineName: testingMachine.name,
-    category: testingMachine.category,
-    assignedEmployees: testingStaff.map(e => ({ employeeId: e._id, tokenNo: e.tokenNo, name: e.name })),
+    machineId: machineTesting710.machineId,
+    machineName: machineTesting710.name,
+    category: machineTesting710.category,
+    assignedEmployees: testingStaffShift3.map(e => ({ employeeId: e._id, tokenNo: e.tokenNo, name: e.name })),
   });
 
-  // Minimal Metalizing: Exactly 4 Employees (Minimum required metalizing crew)
-  const metalizingMachine = machines.find(m => m.category === 'Metalizing') || machines[2];
-  const metalizingStaff = helperGetMultipleExperts(metalizingMachine, maleEmployees, 4, true);
-  metalizingStaff.forEach(e => assignedEmpIds.add(e._id.toString()));
+  // 3. Metalizing (766): 4 Employees
+  const machineMetalizing766 = machines.find(m => m.machineId === '766' || m.category === 'Metalizing') || { machineId: '766', name: 'Metalizing 766', category: 'Metalizing' };
+  const metalizingStaffShift3 = getQualifiedStaff(machineMetalizing766, maleEmployees, 4);
   shift3Allocations.push({
-    machineId: metalizingMachine.machineId,
-    machineName: metalizingMachine.name,
-    category: metalizingMachine.category,
-    assignedEmployees: metalizingStaff.map(e => ({ employeeId: e._id, tokenNo: e.tokenNo, name: e.name })),
+    machineId: machineMetalizing766.machineId,
+    machineName: machineMetalizing766.name,
+    category: machineMetalizing766.category,
+    assignedEmployees: metalizingStaffShift3.map(e => ({ employeeId: e._id, tokenNo: e.tokenNo, name: e.name })),
   });
 
-  // 2. Build Shift-1 Allocation (07:00 AM - 03:00 PM)
+  // ==========================================
+  // SHIFT 1 (07.00 AM - 03.00 PM) & SHIFT 2 (03.00 PM - 11.00 PM)
+  // Monthly rotation rule: 4 weeks Shift 1 <-> Shift 2 rotation
+  // ==========================================
   const shift1Allocations = [];
-  machines.forEach(m => {
-    const requiredCount = m.category === 'Metalizing' ? (m.minStaffRequired || 4) : 1;
-    const assigned = helperGetMultipleExperts(m, maleEmployees, requiredCount);
-    
-    assigned.forEach(e => assignedEmpIds.add(e._id.toString()));
+  const shift2Allocations = [];
 
+  machines.forEach(m => {
+    const reqCount = m.category === 'Metalizing' ? (m.minStaffRequired || 4) : 1;
+
+    // Allocate for Shift 1
+    const staffShift1 = getQualifiedStaff(m, maleEmployees, reqCount);
     shift1Allocations.push({
       machineId: m.machineId,
       machineName: m.name,
       category: m.category,
-      assignedEmployees: assigned.map(e => ({
-        employeeId: e._id,
-        tokenNo: e.tokenNo,
-        name: e.name,
-      })),
+      assignedEmployees: staffShift1.map(e => ({ employeeId: e._id, tokenNo: e.tokenNo, name: e.name })),
     });
-  });
 
-  // 3. Build Shift-2 Allocation (03:00 PM - 11:00 PM)
-  const shift2Allocations = [];
-  machines.forEach(m => {
-    const requiredCount = m.category === 'Metalizing' ? (m.minStaffRequired || 4) : 1;
-    const assigned = helperGetMultipleExperts(m, maleEmployees, requiredCount);
-    
-    assigned.forEach(e => assignedEmpIds.add(e._id.toString()));
-
+    // Allocate for Shift 2
+    const staffShift2 = getQualifiedStaff(m, maleEmployees, reqCount);
     shift2Allocations.push({
       machineId: m.machineId,
       machineName: m.name,
       category: m.category,
-      assignedEmployees: assigned.map(e => ({
-        employeeId: e._id,
-        tokenNo: e.tokenNo,
-        name: e.name,
-      })),
+      assignedEmployees: staffShift2.map(e => ({ employeeId: e._id, tokenNo: e.tokenNo, name: e.name })),
     });
   });
 
-  // 4. Build General Shift Allocation (08:30 AM - 04:30 PM)
-  // Female employees + remaining unassigned male employees
-  const generalShiftEmployees = [
-    ...femaleEmployees,
-    ...maleEmployees.filter(e => !assignedEmpIds.has(e._id.toString()))
-  ];
+  // ==========================================
+  // GENERAL SHIFT (08.30 AM - 04.30 PM)
+  // Female employees + remaining unassigned workers
+  // ==========================================
+  const unassignedMale = maleEmployees.filter(e => !assignedEmpIds.has(e._id.toString()));
+  const generalShiftCrew = [...femaleEmployees, ...unassignedMale];
 
   const generalShiftAllocations = [{
     machineId: 'GENERAL_MPP',
-    machineName: 'General Section Assembly & Quality Check',
+    machineName: 'General Section Operations & Quality Maintenance',
     category: 'General',
-    assignedEmployees: generalShiftEmployees.map(e => ({
-      employeeId: e._id,
-      tokenNo: e.tokenNo,
-      name: e.name,
-    })),
+    assignedEmployees: generalShiftCrew.map(e => ({ employeeId: e._id, tokenNo: e.tokenNo, name: e.name })),
   }];
 
-  // Construct Shift Schedule document
+  // Construct official notice format
+  const noticeRef = `PC12/XR/${String(pastRostersCount + 4).padStart(3, '0')}`;
+
   const shiftScheduleData = {
-    noticeRefNo: 'PC12/XR/004',
-    unit: 'MPP Section (Unit 1 & Unit 2)',
+    noticeRefNo: noticeRef,
+    unit: 'ഉല്പാദന യൂണിറ്റ് 1 & 2 (MPP Section)',
     weekStartDate: weekStart,
     weekEndDate: weekEnd,
     status: 'Published',

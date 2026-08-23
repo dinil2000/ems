@@ -52,7 +52,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
   const handleLogin = async () => {
     if (!tokenOrEmail || !password) {
-      Alert.alert('Missing Fields', 'Please enter your Token Number or Email and Password.');
+      Alert.alert('Missing Fields', 'Please enter your Punch Token Number or Email and Password.');
       return;
     }
 
@@ -93,11 +93,6 @@ export default function LoginScreen({ onLoginSuccess }) {
     }
   };
 
-  const handleQuickFill = (tok, pass) => {
-    setTokenOrEmail(tok);
-    setPassword(pass);
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -114,10 +109,10 @@ export default function LoginScreen({ onLoginSuccess }) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Sign In to Account</Text>
 
-          <Text style={styles.label}>Employee Token # or Email</Text>
+          <Text style={styles.label}>Employee Punch Token # or Username</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. 8709, 3085, or ADMIN01"
+            placeholder="Enter Punch Token No (e.g. 8709, 3085) or admin"
             placeholderTextColor="#64748b"
             value={tokenOrEmail}
             onChangeText={setTokenOrEmail}
@@ -141,32 +136,6 @@ export default function LoginScreen({ onLoginSuccess }) {
               <Text style={styles.buttonText}>Sign In to Cloud App</Text>
             )}
           </TouchableOpacity>
-
-          {/* Quick Credentials Assistant */}
-          <View style={styles.quickFillContainer}>
-            <Text style={styles.quickFillHeader}>🔑 1-Tap Quick Credentials Test:</Text>
-            
-            <TouchableOpacity
-              style={styles.quickChip}
-              onPress={() => handleQuickFill('ADMIN01', 'admin')}
-            >
-              <Text style={styles.quickChipText}>👑 Root Admin: ADMIN01 (pass: admin)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickChip}
-              onPress={() => handleQuickFill('3085', 'admin')}
-            >
-              <Text style={styles.quickChipText}>🛡️ Supervisor: Token 3085 (pass: admin)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickChip}
-              onPress={() => handleQuickFill('8709', 'admin')}
-            >
-              <Text style={styles.quickChipText}>👷 Worker: Token 8709 (pass: admin)</Text>
-            </TouchableOpacity>
-          </View>
 
           {/* Server IP Configurator Trigger */}
           <TouchableOpacity
@@ -286,32 +255,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
-  },
-  quickFillContainer: {
-    marginTop: 18,
-    backgroundColor: '#090d16',
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  quickFillHeader: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#38bdf8',
-    marginBottom: 8,
-  },
-  quickChip: {
-    backgroundColor: '#1e293b',
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    marginBottom: 6,
-  },
-  quickChipText: {
-    fontSize: 12,
-    color: '#e2e8f0',
-    fontWeight: '600',
   },
   configToggle: {
     marginTop: 16,

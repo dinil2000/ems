@@ -123,7 +123,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Site Admin API: Appoint Supervisor by ONLY providing Token Number!
+// Site Admin API: Appoint Supervisor by Token Number
 router.post('/create-supervisor', async (req, res) => {
   try {
     const { tokenNo } = req.body;
@@ -158,7 +158,7 @@ router.post('/create-supervisor', async (req, res) => {
     }
 
     res.status(200).json({
-      message: `Employee ${employee.name} (Token #${tokenNo}) has been successfully appointed as Supervisor!`,
+      message: `Employee ${employee.name} (Token #${tokenNo}) has been promoted to Supervisor position!`,
       user,
       employee
     });
@@ -167,7 +167,49 @@ router.post('/create-supervisor', async (req, res) => {
   }
 });
 
-// Login Route
+// Site Admin API: Demote Supervisor to Employee position
+router.post('/demote-supervisor', async (req, res) => {
+  try {
+    const { tokenNo } = req.body;
+    if (!tokenNo) {
+      return res.status(400).json({ message: 'Employee Token Number is required.' });
+    }
+
+    const employee = await Employee.findOne({ tokenNo });
+    if (employee) {
+      employee.isShiftInCharge = false;
+      await employee.save();
+    }
+
+    let user = await User.findOne({ employeeToken: tokenNo });
+    if (!user) {
+      return res.status(404).json({ message: `User with Token #${tokenNo} not found.` });
+    }
+
+    user.role = 'Employee';
+    await user.save();
+
+    res.status(200).json({
+      message: `Supervisor (Token #${tokenNo}) has been successfully demoted to Employee position.`,
+      user,
+      employee
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get All Users (Admin / Supervisor Endpoint)
+router.get('/users', async (req, res) => {
+  try {
+    const users = await User.find({}).populate('employeeProfile');
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Login Route (Supports Root Admin username 'admin' or 'ADMIN01' with pass 'admin61445412', and employees with 'admin')
 router.post('/login', async (req, res) => {
   try {
     const { tokenOrEmail, password } = req.body;
@@ -175,12 +217,20 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Token/Email and password are required.' });
     }
 
-    const user = await User.findOne({
-      $or: [
-        { email: tokenOrEmail.toLowerCase() },
-        { employeeToken: tokenOrEmail }
-      ]
-    }).populate('employeeProfile');
+    const searchKey = tokenOrEmail.trim();
+
+    // Check if logging in as root admin with username 'admin' or 'ADMIN01'
+    let user;
+    if (searchKey.toLowerCase() === 'admin' || searchKey.toUpperCase() === 'ADMIN01') {
+      user = await User.findOne({ role: 'SiteAdmin' });
+    } else {
+      user = await User.findOne({
+        $or: [
+          { email: searchKey.toLowerCase() },
+          { employeeToken: searchKey }
+        ]
+      }).populate('employeeProfile');
+    }
 
     if (!user) {
       return res.status(400).json({ message: 'Invalid employee token or credentials.' });

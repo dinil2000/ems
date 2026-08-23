@@ -12,8 +12,7 @@ const seedDatabase = async () => {
     // 1. Seed Machines
     await Machine.deleteMany({});
     const machinesData = [
-      { machineId: '700', name: 'Winding Machine #700', category: 'Winding', minStaffRequired: 1, unit: 'Unit 2' },
-      { machineId: '705', name: 'Winding Machine #705', category: 'Winding', minStaffRequired: 1, unit: 'Unit 2' },
+      { machineId: '700,705', name: 'Winding Machine #700/705', category: 'Winding', minStaffRequired: 1, unit: 'Unit 2' },
       { machineId: '701', name: 'Winding Machine #701', category: 'Winding', minStaffRequired: 1, unit: 'Unit 2' },
       { machineId: '0450', name: 'Winding Machine #0450', category: 'Winding', minStaffRequired: 1, unit: 'Unit 1' },
       { machineId: '0460', name: 'Winding Machine #0460', category: 'Winding', minStaffRequired: 1, unit: 'Unit 1' },
@@ -31,12 +30,12 @@ const seedDatabase = async () => {
     await Employee.deleteMany({});
     const employeesData = [
       // In-Charge & Supervisors
-      { tokenNo: '3085', name: 'Bipin E P', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 8, basicSalary: 40000, machineExpertise: ['700', '705', '710'], gender: 'Male', isShiftInCharge: true, unit: 'Unit 2', status: 'Active' },
+      { tokenNo: '3085', name: 'Bipin E P', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 8, basicSalary: 40000, machineExpertise: ['700,705', '710', '766'], gender: 'Male', isShiftInCharge: true, unit: 'Unit 2', status: 'Active' },
       { tokenNo: '851', name: 'Rahul', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 6, basicSalary: 36000, machineExpertise: ['765(1)', '766'], gender: 'Male', isShiftInCharge: true, unit: 'Unit 2', status: 'Active' },
 
       // Unit 2 Shift 1
-      { tokenNo: '8709', name: 'Hamal P V', employmentType: 'Permanent', qualification: 'ITI', experienceYears: 3, basicSalary: 22500, machineExpertise: ['700', '705'], gender: 'Male', status: 'Active' },
-      { tokenNo: '1563', name: 'Rachin Lal', employmentType: 'Casual', qualification: 'ITI', experienceYears: 2, basicSalary: 21000, machineExpertise: ['700', '705'], gender: 'Male', status: 'Active' },
+      { tokenNo: '8709', name: 'Hamal P V', employmentType: 'Permanent', qualification: 'ITI', experienceYears: 3, basicSalary: 22500, machineExpertise: ['700,705'], gender: 'Male', status: 'Active' },
+      { tokenNo: '1563', name: 'Rachin Lal', employmentType: 'Casual', qualification: 'ITI', experienceYears: 2, basicSalary: 21000, machineExpertise: ['700,705'], gender: 'Male', status: 'Active' },
       { tokenNo: '8662', name: 'Shahil Ali P K', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 4, basicSalary: 32000, machineExpertise: ['701'], gender: 'Male', status: 'Active' },
       { tokenNo: '1573', name: 'Manoj', employmentType: 'Permanent', qualification: 'ITI', experienceYears: 5, basicSalary: 25500, machineExpertise: ['710'], gender: 'Male', status: 'Active' },
       { tokenNo: '205', name: 'Prathyush', employmentType: 'Casual', qualification: 'ITI', experienceYears: 1, basicSalary: 19500, machineExpertise: ['710'], gender: 'Male', status: 'Active' },
@@ -53,8 +52,8 @@ const seedDatabase = async () => {
       { tokenNo: '8660', name: 'Ashwanth A', employmentType: 'Casual', qualification: 'ITI', experienceYears: 2, basicSalary: 21000, machineExpertise: ['766'], gender: 'Male', status: 'Active' },
 
       // Unit 2 Shift 2
-      { tokenNo: '8271', name: 'Sugesh K', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 4, basicSalary: 32000, machineExpertise: ['700', '705'], gender: 'Male', status: 'Active' },
-      { tokenNo: '562', name: 'Abhilash K', employmentType: 'Casual', qualification: 'ITI', experienceYears: 2, basicSalary: 21000, machineExpertise: ['700', '705'], gender: 'Male', status: 'Active' },
+      { tokenNo: '8271', name: 'Sugesh K', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 4, basicSalary: 32000, machineExpertise: ['700,705'], gender: 'Male', status: 'Active' },
+      { tokenNo: '562', name: 'Abhilash K', employmentType: 'Casual', qualification: 'ITI', experienceYears: 2, basicSalary: 21000, machineExpertise: ['700,705'], gender: 'Male', status: 'Active' },
       { tokenNo: '8787', name: 'Arjun', employmentType: 'Permanent', qualification: 'ITI', experienceYears: 3, basicSalary: 22500, machineExpertise: ['701'], gender: 'Male', status: 'Active' },
       { tokenNo: '1497', name: 'Dileep S K', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 5, basicSalary: 34000, machineExpertise: ['710'], gender: 'Male', status: 'Active' },
       { tokenNo: '1572', name: 'Rejin', employmentType: 'Permanent', qualification: 'ITI', experienceYears: 4, basicSalary: 24000, machineExpertise: ['711'], gender: 'Male', status: 'Active' },
@@ -72,8 +71,8 @@ const seedDatabase = async () => {
       { tokenNo: '8623', name: 'Mubeen', employmentType: 'Permanent', qualification: 'ITI', experienceYears: 2, basicSalary: 21000, machineExpertise: ['766'], gender: 'Male', status: 'Active' },
       { tokenNo: '8747', name: 'Rishabh', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 3, basicSalary: 30000, machineExpertise: ['766'], gender: 'Male', status: 'Active' },
 
-      // Unit 2 Shift 3 (Night Shift Minimal Crew)
-      { tokenNo: '8713', name: 'Yadukrishna M', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 4, basicSalary: 32000, machineExpertise: ['700', '705'], gender: 'Male', status: 'Active' },
+      // Unit 2 Shift 3 (Night Shift Minimal 6-Employee Crew)
+      { tokenNo: '8713', name: 'Yadukrishna M', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 4, basicSalary: 32000, machineExpertise: ['700,705'], gender: 'Male', status: 'Active' },
       { tokenNo: '8771', name: 'Abhinav', employmentType: 'Permanent', qualification: 'ITI', experienceYears: 3, basicSalary: 22500, machineExpertise: ['710'], gender: 'Male', status: 'Active' },
       { tokenNo: '8770', name: 'Ajith Gopi', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 5, basicSalary: 34000, machineExpertise: ['766'], gender: 'Male', status: 'Active' },
       { tokenNo: '8794', name: 'Abhayaraj', employmentType: 'Permanent', qualification: 'ITI', experienceYears: 4, basicSalary: 24000, machineExpertise: ['766'], gender: 'Male', status: 'Active' },
@@ -101,25 +100,26 @@ const seedDatabase = async () => {
       { tokenNo: '491', name: 'Ashwanth', employmentType: 'Casual', qualification: 'ITI', experienceYears: 2, basicSalary: 21000, machineExpertise: ['0470'], gender: 'Male', unit: 'Unit 1', status: 'Active' },
 
       // Female employees (General Shift)
-      { tokenNo: '9001', name: 'Anjali Nair', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 5, basicSalary: 34000, machineExpertise: ['700', '710'], gender: 'Female', status: 'Active' },
+      { tokenNo: '9001', name: 'Anjali Nair', employmentType: 'Permanent', qualification: 'Diploma', experienceYears: 5, basicSalary: 34000, machineExpertise: ['700,705', '710'], gender: 'Female', status: 'Active' },
       { tokenNo: '9002', name: 'Deepa V', employmentType: 'Permanent', qualification: 'ITI', experienceYears: 4, basicSalary: 24000, machineExpertise: ['701', '711'], gender: 'Female', status: 'Active' },
     ];
 
     const insertedEmployees = await Employee.insertMany(employeesData);
     console.log(`✅ Seeded ${insertedEmployees.length} official Keltron MPP section employees.`);
 
-    // 3. Seed Users with PASSWORD 'admin' FOR EVERY USER
+    // 3. Seed Users with PASSWORD 'admin61445412' FOR ROOT ADMIN & 'admin' FOR EVERY EMPLOYEE
     await User.deleteMany({});
     const salt = await bcrypt.genSalt(10);
-    const commonAdminPasswordHash = await bcrypt.hash('admin', salt);
+    const rootAdminPasswordHash = await bcrypt.hash('admin61445412', salt);
+    const employeeAdminPasswordHash = await bcrypt.hash('admin', salt);
 
     const usersData = [];
 
-    // Root Site Admin User
+    // Root Site Admin User: admin / ADMIN01 with password admin61445412
     usersData.push({
       employeeToken: 'ADMIN01',
       email: 'admin@keltron.co.in',
-      password: commonAdminPasswordHash,
+      password: rootAdminPasswordHash,
       role: 'SiteAdmin',
     });
 
@@ -131,7 +131,7 @@ const seedDatabase = async () => {
       usersData.push({
         employeeToken: '3085',
         email: 'bipin.supervisor@keltron.co.in',
-        password: commonAdminPasswordHash,
+        password: employeeAdminPasswordHash,
         role: 'Supervisor',
         employeeProfile: supervisor1._id,
       });
@@ -140,7 +140,7 @@ const seedDatabase = async () => {
       usersData.push({
         employeeToken: '851',
         email: 'rahul.supervisor@keltron.co.in',
-        password: commonAdminPasswordHash,
+        password: employeeAdminPasswordHash,
         role: 'Supervisor',
         employeeProfile: supervisor2._id,
       });
@@ -152,7 +152,7 @@ const seedDatabase = async () => {
         usersData.push({
           employeeToken: emp.tokenNo,
           email: `emp${emp.tokenNo}@keltron.co.in`,
-          password: commonAdminPasswordHash,
+          password: employeeAdminPasswordHash,
           role: 'Employee',
           employeeProfile: emp._id,
         });
@@ -160,7 +160,7 @@ const seedDatabase = async () => {
     });
 
     const insertedUsers = await User.insertMany(usersData);
-    console.log(`✅ Pre-registered ${insertedUsers.length} user login accounts (ALL passwords set to 'admin').`);
+    console.log(`✅ Pre-registered ${insertedUsers.length} user login accounts (Root Admin: admin61445412, Employees: admin).`);
 
     // 4. Seed Initial Weekly Roster
     await ShiftSchedule.deleteMany({});
@@ -178,7 +178,7 @@ const seedDatabase = async () => {
           shiftType: 'Shift-1 (07.00AM-03.00PM)',
           shiftInCharge: { tokenNo: '3085', name: 'Bipin E P' },
           allocations: [
-            { machineId: '700, 705', machineName: 'Winding 700/705', category: 'Winding', assignedEmployees: [{ tokenNo: '8709', name: 'Hamal P V' }, { tokenNo: '1563', name: 'Rachin Lal' }] },
+            { machineId: '700,705', machineName: 'Winding 700/705', category: 'Winding', assignedEmployees: [{ tokenNo: '8709', name: 'Hamal P V' }, { tokenNo: '1563', name: 'Rachin Lal' }] },
             { machineId: '701', machineName: 'Winding 701', category: 'Winding', assignedEmployees: [{ tokenNo: '8662', name: 'Shahil Ali P K' }] },
             { machineId: '710', machineName: 'Testing 710', category: 'Testing', assignedEmployees: [{ tokenNo: '1573', name: 'Manoj' }, { tokenNo: '205', name: 'Prathyush' }] },
             { machineId: '711', machineName: 'Testing 711', category: 'Testing', assignedEmployees: [{ tokenNo: '1558', name: 'Premarajan' }] },
@@ -195,7 +195,7 @@ const seedDatabase = async () => {
           shiftType: 'Shift-2 (03.00PM-11.00PM)',
           shiftInCharge: { tokenNo: '851', name: 'Rahul' },
           allocations: [
-            { machineId: '700, 705', machineName: 'Winding 700/705', category: 'Winding', assignedEmployees: [{ tokenNo: '8271', name: 'Sugesh K' }, { tokenNo: '562', name: 'Abhilash K' }] },
+            { machineId: '700,705', machineName: 'Winding 700/705', category: 'Winding', assignedEmployees: [{ tokenNo: '8271', name: 'Sugesh K' }, { tokenNo: '562', name: 'Abhilash K' }] },
             { machineId: '701', machineName: 'Winding 701', category: 'Winding', assignedEmployees: [{ tokenNo: '8787', name: 'Arjun' }] },
             { machineId: '710', machineName: 'Testing 710', category: 'Testing', assignedEmployees: [{ tokenNo: '1497', name: 'Dileep S K' }] },
             { machineId: '711', machineName: 'Testing 711', category: 'Testing', assignedEmployees: [{ tokenNo: '1572', name: 'Rejin' }] },
@@ -212,7 +212,7 @@ const seedDatabase = async () => {
           shiftType: 'Shift-3 (11.00PM-07.00AM)',
           shiftInCharge: { tokenNo: '3085', name: 'Bipin E P' },
           allocations: [
-            { machineId: '700, 705', machineName: 'Winding 700/705', category: 'Winding', assignedEmployees: [{ tokenNo: '8713', name: 'Yadukrishna M' }] },
+            { machineId: '700,705', machineName: 'Winding 700/705', category: 'Winding', assignedEmployees: [{ tokenNo: '8713', name: 'Yadukrishna M' }] },
             { machineId: '710', machineName: 'Testing 710', category: 'Testing', assignedEmployees: [{ tokenNo: '8771', name: 'Abhinav' }] },
             { machineId: '766', machineName: 'Metalizing 766', category: 'Metalizing', assignedEmployees: [{ tokenNo: '8770', name: 'Ajith Gopi' }, { tokenNo: '8794', name: 'Abhayaraj' }, { tokenNo: '8793', name: 'Amal Raj' }, { tokenNo: '8788', name: 'Deekshith' }] },
           ]
@@ -220,7 +220,7 @@ const seedDatabase = async () => {
       ]
     });
 
-    console.log('🎉 MPP Database successfully populated with 50+ pre-registered employees & shift rosters!');
+    console.log('🎉 MPP Database successfully populated with 60+ pre-registered employees & shift rosters!');
   } catch (error) {
     console.error('❌ Error seeding database:', error.message);
   }
