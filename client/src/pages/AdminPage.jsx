@@ -1,7 +1,21 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { ShieldAlert, UserCheck, UserPlus, Key, CheckCircle, XCircle, Shield, UserMinus } from 'lucide-react';
+import { ShieldAlert, UserCheck, UserPlus, Key, CheckCircle, XCircle, UserMinus, Edit3, Save, X, Cpu } from 'lucide-react';
+
+const availableMachinesList = [
+  { id: '700,705', name: 'Winding 700/705', unit: 'Unit 2' },
+  { id: '701', name: 'Winding 701', unit: 'Unit 2' },
+  { id: '710', name: 'Testing 710', unit: 'Unit 2' },
+  { id: '711', name: 'Testing 711', unit: 'Unit 2' },
+  { id: '765(1)', name: 'Metalizing 765(1)', unit: 'Unit 2' },
+  { id: '765(2)', name: 'Metalizing 765(2)', unit: 'Unit 2' },
+  { id: '766', name: 'Metalizing 766', unit: 'Unit 2' },
+  { id: '0450', name: 'Winding 0450', unit: 'Unit 1' },
+  { id: '0460', name: 'Winding 0460', unit: 'Unit 1' },
+  { id: '0480', name: 'Testing 0480', unit: 'Unit 1' },
+  { id: '0470', name: 'Metalizing 0470', unit: 'Unit 1' },
+];
 
 const AdminPage = () => {
   const { user, API_BASE } = useContext(AuthContext);
@@ -13,6 +27,20 @@ const AdminPage = () => {
 
   // Token-Only Supervisor Appointment State
   const [supTokenNo, setSupTokenNo] = useState('');
+
+  // Edit Employee Modal State
+  const [editingEmp, setEditingEmp] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    employmentType: 'Permanent',
+    qualification: 'ITI',
+    experienceYears: 0,
+    basicSalary: 0,
+    gender: 'Male',
+    unit: 'Unit 2',
+    machineExpertise: []
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const loadAdminData = async () => {
     setLoading(true);
@@ -93,6 +121,51 @@ const AdminPage = () => {
     }
   };
 
+  // Open Edit Employee Modal
+  const openEditModal = (empProfile) => {
+    if (!empProfile) return;
+    setEditingEmp(empProfile);
+    setEditForm({
+      name: empProfile.name || '',
+      employmentType: empProfile.employmentType || 'Permanent',
+      qualification: empProfile.qualification || 'ITI',
+      experienceYears: empProfile.experienceYears || 0,
+      basicSalary: empProfile.basicSalary || 0,
+      gender: empProfile.gender || 'Male',
+      unit: empProfile.unit || 'Unit 2',
+      machineExpertise: empProfile.machineExpertise || []
+    });
+  };
+
+  const handleMachineToggle = (machineId) => {
+    setEditForm(prev => {
+      const exists = prev.machineExpertise.includes(machineId);
+      if (exists) {
+        return { ...prev, machineExpertise: prev.machineExpertise.filter(m => m !== machineId) };
+      } else {
+        return { ...prev, machineExpertise: [...prev.machineExpertise, machineId] };
+      }
+    });
+  };
+
+  // Submit Employee Edits
+  const handleSaveEmployeeEdits = async (e) => {
+    e.preventDefault();
+    if (!editingEmp) return;
+    setSavingEdit(true);
+    setMessage('');
+    try {
+      const res = await axios.put(`${API_BASE}/employees/${editingEmp._id}`, editForm);
+      setMessage(`✅ ${res.data.message}`);
+      setEditingEmp(null);
+      loadAdminData();
+    } catch (err) {
+      setMessage(`❌ Update Failed: ${err.response?.data?.message || err.message}`);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1.5rem 1rem' }}>
       {/* Site Admin Header Banner */}
@@ -113,7 +186,7 @@ const AdminPage = () => {
               Site Admin Master Operations Control Portal (/admin)
             </h1>
             <p style={{ fontSize: '0.85rem', color: '#818cf8', margin: '0.2rem 0 0 0' }}>
-              Full Control • Promote & Demote Supervisors • Manage Member Accounts
+              Full Control • Edit Every Employee's Details & Machine Expertise • Promote & Demote Roles
             </p>
           </div>
         </div>
@@ -216,8 +289,8 @@ const AdminPage = () => {
 
           {/* Active Employee Roster & Role Control */}
           <div className="card">
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem' }}>Registered Staff & Role Position Control</h3>
-            <div className="table-container" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem' }}>Registered Staff & Full Employee Details Control</h3>
+            <div className="table-container" style={{ maxHeight: '420px', overflowY: 'auto' }}>
               <table>
                 <thead>
                   <tr>
@@ -248,28 +321,40 @@ const AdminPage = () => {
                         </div>
                       </td>
                       <td>
-                        {usr.role === 'Supervisor' ? (
-                          <button
-                            onClick={() => handleDemoteSupervisor(usr.employeeToken)}
-                            className="btn btn-danger"
-                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
-                          >
-                            <UserMinus size={13} /> Demote to Employee
-                          </button>
-                        ) : usr.role === 'Employee' ? (
-                          <button
-                            onClick={() => {
-                              setSupTokenNo(usr.employeeToken);
-                              handleCreateSupervisor({ preventDefault: () => {} });
-                            }}
-                            className="btn btn-primary"
-                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
-                          >
-                            <UserPlus size={13} /> Promote to Supervisor
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 700 }}>Master Root</span>
-                        )}
+                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                          {usr.employeeProfile && (
+                            <button
+                              onClick={() => openEditModal(usr.employeeProfile)}
+                              className="btn btn-secondary"
+                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', backgroundColor: '#334155' }}
+                            >
+                              <Edit3 size={13} /> Edit Details
+                            </button>
+                          )}
+
+                          {usr.role === 'Supervisor' ? (
+                            <button
+                              onClick={() => handleDemoteSupervisor(usr.employeeToken)}
+                              className="btn btn-danger"
+                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                            >
+                              <UserMinus size={13} /> Demote to Employee
+                            </button>
+                          ) : usr.role === 'Employee' ? (
+                            <button
+                              onClick={() => {
+                                setSupTokenNo(usr.employeeToken);
+                                handleCreateSupervisor({ preventDefault: () => {} });
+                              }}
+                              className="btn btn-primary"
+                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                            >
+                              <UserPlus size={13} /> Promote to Supervisor
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 700 }}>Master Root</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -331,6 +416,169 @@ const AdminPage = () => {
           </div>
         </div>
       </div>
+
+      {/* ✏️ EDIT EMPLOYEE DETAILS MODAL */}
+      {editingEmp && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }}>
+          <div className="card animate-fade-in" style={{ maxWidth: '650px', width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: '1.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #334155', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Edit3 style={{ color: '#38bdf8' }} size={22} />
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#f8fafc' }}>
+                  Edit Details: #{editingEmp.tokenNo} ({editingEmp.name})
+                </h3>
+              </div>
+              <button onClick={() => setEditingEmp(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEmployeeEdits}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Full Employee Name *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Employment Type *</label>
+                  <select
+                    className="form-input"
+                    value={editForm.employmentType}
+                    onChange={(e) => setEditForm({ ...editForm, employmentType: e.target.value })}
+                  >
+                    <option value="Permanent">Permanent</option>
+                    <option value="Casual">Casual</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Qualification *</label>
+                  <select
+                    className="form-input"
+                    value={editForm.qualification}
+                    onChange={(e) => setEditForm({ ...editForm, qualification: e.target.value })}
+                  >
+                    <option value="ITI">ITI</option>
+                    <option value="Diploma">Diploma</option>
+                    <option value="BE/B.Tech">BE / B.Tech</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Experience (Years)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={editForm.experienceYears}
+                    onChange={(e) => setEditForm({ ...editForm, experienceYears: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Basic Salary (₹)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={editForm.basicSalary}
+                    onChange={(e) => setEditForm({ ...editForm, basicSalary: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Gender *</label>
+                  <select
+                    className="form-input"
+                    value={editForm.gender}
+                    onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Unit Section *</label>
+                  <select
+                    className="form-input"
+                    value={editForm.unit}
+                    onChange={(e) => setEditForm({ ...editForm, unit: e.target.value })}
+                  >
+                    <option value="Unit 2">Unit 2 (MPP Section)</option>
+                    <option value="Unit 1">Unit 1 (MPP Section)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Machine Expertise Selectors */}
+              <div style={{ marginBottom: '1.5rem', backgroundColor: '#090d16', padding: '1rem', borderRadius: '8px', border: '1px solid #334155' }}>
+                <label className="form-label" style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.5rem' }}>
+                  ⚙️ Machine Operational Expertise (Used during Auto-Shift Generation):
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', maxHeight: '150px', overflowY: 'auto' }}>
+                  {availableMachinesList.map(m => {
+                    const isChecked = editForm.machineExpertise.includes(m.id);
+                    return (
+                      <label
+                        key={m.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          fontSize: '0.8rem',
+                          color: isChecked ? '#38bdf8' : '#94a3b8',
+                          cursor: 'pointer',
+                          backgroundColor: isChecked ? 'rgba(56, 189, 248, 0.1)' : 'transparent',
+                          padding: '0.3rem 0.5rem',
+                          borderRadius: '4px'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleMachineToggle(m.id)}
+                        />
+                        <span>#{m.id} ({m.name})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button type="button" onClick={() => setEditingEmp(null)} className="btn btn-secondary">
+                  Cancel
+                </button>
+                <button type="submit" disabled={savingEdit} className="btn btn-primary" style={{ backgroundColor: '#10b981' }}>
+                  <Save size={16} /> {savingEdit ? 'Saving...' : 'Save Employee Edits'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

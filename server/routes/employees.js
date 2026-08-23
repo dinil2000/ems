@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Employee = require('../models/Employee');
+const User = require('../models/User');
 
 // Get all active employees
 router.get('/', async (req, res) => {
@@ -82,11 +83,43 @@ router.get('/:tokenOrId', async (req, res) => {
   }
 });
 
-// Update employee details
+// Full Admin Employee Details Edit Endpoint (Updates profile & machine expertise)
 router.put('/:id', async (req, res) => {
   try {
-    const updated = await Employee.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(updated);
+    const {
+      name,
+      employmentType,
+      qualification,
+      experienceYears,
+      basicSalary,
+      machineExpertise,
+      gender,
+      unit,
+      status
+    } = req.body;
+
+    const updateFields = {};
+    if (name !== undefined) updateFields.name = name;
+    if (employmentType !== undefined) updateFields.employmentType = employmentType;
+    if (qualification !== undefined) updateFields.qualification = qualification;
+    if (experienceYears !== undefined) updateFields.experienceYears = parseInt(experienceYears) || 0;
+    if (basicSalary !== undefined) updateFields.basicSalary = parseFloat(basicSalary) || 0;
+    if (machineExpertise !== undefined) {
+      updateFields.machineExpertise = Array.isArray(machineExpertise) ? machineExpertise : [machineExpertise];
+    }
+    if (gender !== undefined) updateFields.gender = gender;
+    if (unit !== undefined) updateFields.unit = unit;
+    if (status !== undefined) updateFields.status = status;
+
+    const updatedEmp = await Employee.findByIdAndUpdate(req.params.id, updateFields, { new: true });
+    if (!updatedEmp) {
+      return res.status(404).json({ message: 'Employee not found.' });
+    }
+
+    res.json({
+      message: `Employee ${updatedEmp.name} (Token #${updatedEmp.tokenNo}) details updated successfully!`,
+      employee: updatedEmp
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
