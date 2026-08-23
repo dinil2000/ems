@@ -38,6 +38,10 @@ const shiftScheduleSchema = new mongoose.Schema({
     type: String,
     default: 'MPP Section (Unit 1 & 2)',
   },
+  noticeIssueDate: {
+    type: Date,
+    required: true,
+  },
   weekStartDate: {
     type: Date,
     required: true,

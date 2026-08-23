@@ -6,11 +6,21 @@ const { generateWeeklyRoster } = require('../utils/shiftScheduler');
 // Get latest published roster
 router.get('/latest', async (req, res) => {
   try {
-    const roster = await ShiftSchedule.findOne({ status: 'Published' }).sort({ createdAt: -1 });
+    const roster = await ShiftSchedule.findOne({ status: 'Published' }).sort({ weekStartDate: -1 });
     if (!roster) {
       return res.status(404).json({ message: 'No published roster available. Generate one.' });
     }
     res.json(roster);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get all published rosters sorted by weekStartDate descending (for Previous / Next week navigation)
+router.get('/all', async (req, res) => {
+  try {
+    const rosters = await ShiftSchedule.find({ status: 'Published' }).sort({ weekStartDate: -1 });
+    res.json(rosters);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -28,7 +38,7 @@ router.post('/auto-generate', async (req, res) => {
 
     const roster = await generateWeeklyRoster(weekStartDate);
     res.status(201).json({
-      message: 'Weekly shift notice successfully generated following MPP machine expertise & rotation rules!',
+      message: 'Weekly shift notice successfully generated! Notice Date set to Friday & Shift 1 <-> Shift 2 rotated.',
       roster
     });
   } catch (error) {
