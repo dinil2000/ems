@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
+const User = require('../models/User');
 const ShiftSchedule = require('../models/ShiftSchedule');
 
 // Helper to get shift start time for today (Default General: 08:30 AM, 1st: 07:00 AM, 2nd: 03:00 PM, 3rd: 11:00 PM)
@@ -105,7 +106,7 @@ router.post('/punch-in', async (req, res) => {
 
     if (isLate) {
       return res.status(201).json({
-        message: `Punched In at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (LATE by ${lateMinutes} mins - Exceeds 10-min grace period). Recorded! Pending Supervisor Late Approval.`,
+        message: `Punched In at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (LATE by ${lateMinutes} mins - Exceeds 10-min grace period). Recorded! Pending Late Approval.`,
         attendance: record,
         isLate: true
       });
@@ -180,12 +181,22 @@ router.post('/punch-out', async (req, res) => {
   }
 });
 
-// Supervisor approves late punch-in
+// Approve late punch-in (RESTRICTED: Supervisor late punch can ONLY be approved by Site Admin)
 router.post('/approve-late/:id', async (req, res) => {
   try {
-    const { supervisorToken, supervisorName } = req.body;
+    const { supervisorToken, supervisorName, requesterRole } = req.body;
     const record = await Attendance.findById(req.params.id);
     if (!record) return res.status(404).json({ message: 'Attendance record not found' });
+
+    // Check if the employee who punched late is a Supervisor or Admin
+    const punchUser = await User.findOne({ employeeToken: record.tokenNo });
+    const isPunchedUserSupervisor = punchUser && (punchUser.role === 'Supervisor' || punchUser.role === 'SiteAdmin');
+
+    if (isPunchedUserSupervisor && requesterRole !== 'SiteAdmin') {
+      return res.status(403).json({
+        message: `Permission Denied: Token #${record.tokenNo} belongs to a Supervisor. Late punches for Supervisors can ONLY be approved by Site Admin!`
+      });
+    }
 
     record.supervisorApproved = true;
     record.approvedBy = {
@@ -195,7 +206,7 @@ router.post('/approve-late/:id', async (req, res) => {
     await record.save();
 
     res.json({
-      message: `Supervisor approved late punch-in for Token #${record.tokenNo}!`,
+      message: `Late punch-in for Token #${record.tokenNo} successfully approved!`,
       attendance: record
     });
   } catch (error) {
@@ -203,7 +214,7 @@ router.post('/approve-late/:id', async (req, res) => {
   }
 });
 
-// Supervisor fetch list of late punches pending approval
+// Supervisor / Admin fetch list of late punches pending approval
 router.get('/pending-late', async (req, res) => {
   try {
     const pendingLate = await Attendance.find({

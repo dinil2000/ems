@@ -60,7 +60,8 @@ const SupervisorDashboard = ({ setActiveTab }) => {
     try {
       const res = await axios.post(`${API_BASE}/attendance/approve-late/${attendanceId}`, {
         supervisorToken: user?.employeeToken || '3085',
-        supervisorName: user?.employeeProfile?.name || 'Supervisor'
+        supervisorName: user?.employeeProfile?.name || 'Supervisor',
+        requesterRole: user?.role
       });
       setMessage(`✅ ${res.data.message}`);
       loadData();
@@ -106,9 +107,9 @@ const SupervisorDashboard = ({ setActiveTab }) => {
 
       {message && (
         <div style={{
-          backgroundColor: 'rgba(16, 185, 129, 0.15)',
-          color: '#34d399',
-          border: '1px solid #10b981',
+          backgroundColor: message.includes('✅') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+          color: message.includes('✅') ? '#34d399' : '#f87171',
+          border: message.includes('✅') ? '1px solid #10b981' : '1px solid #f43f5e',
           padding: '0.75rem 1rem',
           borderRadius: '8px',
           marginBottom: '1.5rem',
