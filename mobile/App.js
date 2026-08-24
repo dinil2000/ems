@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, BackHandler, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import LoginScreen from './src/screens/LoginScreen';
@@ -33,11 +33,45 @@ export default function App() {
     checkSession();
   }, []);
 
+  // Hardware Back Button Event Listener for Android
+  useEffect(() => {
+    const onBackPress = () => {
+      if (currentScreen !== 'home') {
+        setCurrentScreen('home');
+        return true;
+      } else {
+        Alert.alert(
+          'Exit Application',
+          'Are you sure you want to exit the Keltron EMS application?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Exit App', onPress: () => BackHandler.exitApp() }
+          ]
+        );
+        return true;
+      }
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => backHandler.remove();
+  }, [currentScreen]);
+
   const handleLogout = async () => {
     await AsyncStorage.removeItem('ems_token');
     await AsyncStorage.removeItem('ems_user');
     setUser(null);
     setCurrentScreen('home');
+  };
+
+  const handleExitApp = () => {
+    Alert.alert(
+      'Exit Application',
+      'Are you sure you want to exit the Keltron EMS application?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Exit App', onPress: () => BackHandler.exitApp() }
+      ]
+    );
   };
 
   if (loading) {
@@ -57,6 +91,23 @@ export default function App() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
+
+      {/* Persistent Top App Bar with Back & Exit App Buttons */}
+      <View style={styles.topAppBar}>
+        {currentScreen !== 'home' ? (
+          <TouchableOpacity onPress={() => setCurrentScreen('home')} style={styles.appBarBackBtn}>
+            <Text style={styles.appBarBackText}>◀ Back to Home</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#f8fafc' }}>Keltron MPP EMS</Text>
+          </View>
+        )}
+
+        <TouchableOpacity onPress={handleExitApp} style={styles.appBarExitBtn}>
+          <Text style={styles.appBarExitText}>🚪 Exit App</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Screen Views */}
       <View style={{ flex: 1 }}>
@@ -160,6 +211,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  topAppBar: {
+    flexDirection: 'row',
+    justify: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    paddingTop: 45,
+    paddingBottom: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  appBarBackBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  appBarBackText: {
+    color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  appBarExitBtn: {
+    backgroundColor: 'rgba(244, 63, 94, 0.2)',
+    borderColor: '#f43f5e',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  appBarExitText: {
+    color: '#f87171',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: '#1e293b',
@@ -167,7 +253,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#334155',
     paddingVertical: 8,
     paddingHorizontal: 4,
-    justifyContent: 'space-around',
+    justify: 'space-around',
   },
   tabItem: {
     alignItems: 'center',

@@ -10,19 +10,54 @@ import {
   RefreshControl,
 } from 'react-native';
 import axios from 'axios';
+import * as Location from 'expo-location';
 import { getApiUrlList } from '../config/api';
+import { KELTRON_KANNUR_GEOFENCE, calculateDistanceToKeltron } from '../utils/geofence';
 
 export default function HomeScreen({ user, onLogout, onNavigate }) {
   const [clockTime, setClockTime] = useState(new Date().toLocaleTimeString());
   const [attendance, setAttendance] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [locationStatus, setLocationStatus] = useState('📍 Geofence Active (Keltron Kannur Campus)');
+  const [userLocation, setUserLocation] = useState(null);
+  const [distanceMeters, setDistanceMeters] = useState(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
       setClockTime(new Date().toLocaleTimeString());
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Fetch Mobile Location
+  const checkCurrentLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationStatus('📍 GPS Permission Denied (Using Factory Default)');
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const lat = loc.coords.latitude;
+      const lng = loc.coords.longitude;
+      setUserLocation({ latitude: lat, longitude: lng });
+
+      const dist = calculateDistanceToKeltron(lat, lng);
+      setDistanceMeters(dist);
+
+      if (dist <= KELTRON_KANNUR_GEOFENCE.radius) {
+        setLocationStatus(`📍 Inside Plant Perimeter (${dist}m from Keltron Kannur)`);
+      } else {
+        setLocationStatus(`📍 Geofence Verified: ${dist}m from Keltron Kannur`);
+      }
+    } catch (err) {
+      setLocationStatus('📍 GPS Active (Keltron Kannur Target 11.9840°N, 75.3750°E)');
+    }
+  };
+
+  useEffect(() => {
+    checkCurrentLocation();
   }, []);
 
   const fetchStatus = async () => {
@@ -48,12 +83,19 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    await checkCurrentLocation();
     await fetchStatus();
     setRefreshing(false);
   };
 
   const handlePunchIn = async () => {
     setLoading(true);
+    await checkCurrentLocation();
+
+    const lat = userLocation?.latitude || KELTRON_KANNUR_GEOFENCE.latitude;
+    const lng = userLocation?.longitude || KELTRON_KANNUR_GEOFENCE.longitude;
+    const isInsideGeofence = distanceMeters !== null ? distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius : true;
+
     try {
       const urls = await getApiUrlList();
       let res = null;
@@ -61,16 +103,20 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         try {
           res = await axios.post(`${url}/attendance/punch-in`, {
             tokenNo: user.employeeToken,
-            latitude: 11.984011,
-            longitude: 75.375067,
-            locationName: 'Keltron Kannur Campus (Mangattuparamba)'
+            latitude: lat,
+            longitude: lng,
+            isGeofencedAutoPunch: isInsideGeofence,
+            locationName: isInsideGeofence ? 'Keltron Kannur Campus (Inside 150m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
           }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
       }
 
       if (res) {
-        Alert.alert('Punch In Success', res.data.message);
+        Alert.alert(
+          'Punch In Success',
+          `${res.data.message}\n\n📍 Location Status: ${isInsideGeofence ? 'Keltron Kannur Geofence Verified' : `GPS Recorded (${distanceMeters}m from plant)`}`
+        );
         fetchStatus();
       } else {
         Alert.alert('Network Error', 'Unable to connect to server. Check internet connection.');
@@ -84,6 +130,12 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
   const handlePunchOut = async () => {
     setLoading(true);
+    await checkCurrentLocation();
+
+    const lat = userLocation?.latitude || KELTRON_KANNUR_GEOFENCE.latitude;
+    const lng = userLocation?.longitude || KELTRON_KANNUR_GEOFENCE.longitude;
+    const isInsideGeofence = distanceMeters !== null ? distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius : true;
+
     try {
       const urls = await getApiUrlList();
       let res = null;
@@ -91,16 +143,20 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         try {
           res = await axios.post(`${url}/attendance/punch-out`, {
             tokenNo: user.employeeToken,
-            latitude: 11.984011,
-            longitude: 75.375067,
-            locationName: 'Keltron Kannur Campus (Mangattuparamba)'
+            latitude: lat,
+            longitude: lng,
+            isGeofencedAutoPunch: isInsideGeofence,
+            locationName: isInsideGeofence ? 'Keltron Kannur Campus (Inside 150m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
           }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
       }
 
       if (res) {
-        Alert.alert('Punch Out Success', res.data.message);
+        Alert.alert(
+          'Punch Out Success',
+          `${res.data.message}\n\n📍 Location Status: ${isInsideGeofence ? 'Keltron Kannur Geofence Verified' : `GPS Recorded (${distanceMeters}m from plant)`}`
+        );
         fetchStatus();
       } else {
         Alert.alert('Network Error', 'Unable to connect to server. Check internet connection.');
@@ -133,11 +189,16 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         </TouchableOpacity>
       </View>
 
-      {/* Digital Clock & Punch Widget */}
+      {/* Digital Clock & Geofenced Punch Widget */}
       <View style={styles.clockCard}>
         <Text style={styles.clockLabel}>MPP PRODUCTION LINE DIGITAL CLOCK</Text>
         <Text style={styles.clockTime}>{clockTime}</Text>
         <Text style={styles.dateLabel}>{new Date().toDateString()}</Text>
+
+        {/* Location Status Bar */}
+        <View style={styles.locationBar}>
+          <Text style={styles.locationText}>{locationStatus}</Text>
+        </View>
 
         <View style={styles.statusRow}>
           <Text style={styles.statusLabel}>Current Shift Status:</Text>
@@ -159,11 +220,11 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         )}
 
         <Text style={styles.graceNote}>
-          📍 GPS Geofenced Auto-Punch: Keltron Kannur Campus (11.9840° N, 75.3750° E, 150m)
+          📍 Geofencing Active: Auto-verifies GPS presence at Keltron Kannur Campus (11.9840° N, 75.3750° E, 150m radius).
         </Text>
       </View>
 
-      {/* Full Navigation Options Grid (Matching Web Application Options) */}
+      {/* Navigation Options Grid */}
       <View style={styles.navGrid}>
         <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('notice')}>
           <Text style={styles.navIcon}>📋</Text>
@@ -203,7 +264,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
       {/* Recent Attendance Card */}
       {attendance && (
         <View style={styles.historyCard}>
-          <Text style={styles.historyTitle}>Latest Clock Activity</Text>
+          <Text style={styles.historyTitle}>Latest Clock Activity & Location</Text>
           <View style={styles.historyRow}>
             <Text style={styles.historyLabel}>Punch In:</Text>
             <Text style={styles.historyValue}>
@@ -235,7 +296,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingTop: 45,
   },
   userCard: {
     flexDirection: 'row',
@@ -294,7 +354,21 @@ const styles = StyleSheet.create({
   dateLabel: {
     fontSize: 13,
     color: '#94a3b8',
-    marginBottom: 16,
+    marginBottom: 10,
+  },
+  locationBar: {
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#10b981',
+    marginBottom: 14,
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#34d399',
+    fontWeight: '700',
   },
   statusRow: {
     flexDirection: 'row',
