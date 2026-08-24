@@ -2,6 +2,8 @@ const Employee = require('../models/Employee');
 const Machine = require('../models/Machine');
 const ShiftSchedule = require('../models/ShiftSchedule');
 
+const ALL_MPP_MACHINES = ['700,705', '701', '710', '711', '765(1)', '765(2)', '766', '0450', '0460', '0480', '0470'];
+
 const generateWeeklyRoster = async (weekStartDateInput) => {
   // Fetch most recent published roster to determine next week & previous shift assignments
   const lastRoster = await ShiftSchedule.findOne({ status: 'Published' }).sort({ weekStartDate: -1 });
@@ -45,7 +47,6 @@ const generateWeeklyRoster = async (weekStartDateInput) => {
 
   // Count total rosters to track 4-week cycle (Week 5 is 3rd Shift Night Shift rotation)
   const totalRostersCount = await ShiftSchedule.countDocuments({ status: 'Published' });
-  const isNightShiftWeek = (totalRostersCount + 1) % 5 === 0;
 
   // Separate female & male employees
   const femaleEmployees = employees.filter(e => e.gender === 'Female');
@@ -55,20 +56,13 @@ const generateWeeklyRoster = async (weekStartDateInput) => {
   const assignedEmpIds = new Set();
 
   /**
-   * Helper: Select qualified employees for a machine based on EXACT machine expertise match.
+   * Helper: Select staff for a machine.
+   * NOTE: Currently, EVERY employee knows EVERY machine by default!
    */
-  const getQualifiedStaff = (targetMachine, candidatePool, countToTake) => {
-    const mId = targetMachine.machineId;
-
+  const getStaffForMachine = (targetMachine, candidatePool, countToTake) => {
     const qualified = candidatePool.filter(emp => {
       const empIdStr = emp._id.toString();
-      if (assignedEmpIds.has(empIdStr)) return false;
-
-      const knowsMachine = Array.isArray(emp.machineExpertise) && (
-        emp.machineExpertise.includes(mId) ||
-        emp.machineExpertise.some(exp => exp.trim() === mId.trim())
-      );
-      return knowsMachine;
+      return !assignedEmpIds.has(empIdStr);
     });
 
     const selected = qualified.slice(0, countToTake);
@@ -86,7 +80,7 @@ const generateWeeklyRoster = async (weekStartDateInput) => {
   const shift3Allocations = [];
 
   const machineWinding700 = machines.find(m => m.machineId === '700,705' || m.category === 'Winding') || { machineId: '700,705', name: 'Winding 700/705', category: 'Winding' };
-  const windingStaffShift3 = getQualifiedStaff(machineWinding700, maleEmployees, 1);
+  const windingStaffShift3 = getStaffForMachine(machineWinding700, maleEmployees, 1);
   shift3Allocations.push({
     machineId: machineWinding700.machineId,
     machineName: machineWinding700.name,
@@ -95,7 +89,7 @@ const generateWeeklyRoster = async (weekStartDateInput) => {
   });
 
   const machineTesting710 = machines.find(m => m.machineId === '710' || m.category === 'Testing') || { machineId: '710', name: 'Testing 710', category: 'Testing' };
-  const testingStaffShift3 = getQualifiedStaff(machineTesting710, maleEmployees, 1);
+  const testingStaffShift3 = getStaffForMachine(machineTesting710, maleEmployees, 1);
   shift3Allocations.push({
     machineId: machineTesting710.machineId,
     machineName: machineTesting710.name,
@@ -104,7 +98,7 @@ const generateWeeklyRoster = async (weekStartDateInput) => {
   });
 
   const machineMetalizing766 = machines.find(m => m.machineId === '766' || m.category === 'Metalizing') || { machineId: '766', name: 'Metalizing 766', category: 'Metalizing' };
-  const metalizingStaffShift3 = getQualifiedStaff(machineMetalizing766, maleEmployees, 4);
+  const metalizingStaffShift3 = getStaffForMachine(machineMetalizing766, maleEmployees, 4);
   shift3Allocations.push({
     machineId: machineMetalizing766.machineId,
     machineName: machineMetalizing766.name,
@@ -127,10 +121,8 @@ const generateWeeklyRoster = async (weekStartDateInput) => {
     return !prev || prev.includes('Shift-2') || prev.includes('Shift-3');
   });
 
-  // Remaining male employees fallback pool
   const remainingMalePool = maleEmployees.filter(e => !prevShift1Pool.includes(e) && !prevShift2Pool.includes(e));
 
-  // Build candidate pools for current week:
   // Candidate pool for Shift 2: Previous Shift 1 workers FIRST, then remaining
   const shift2CandidatePool = [...prevShift1Pool, ...remainingMalePool, ...prevShift2Pool];
   // Candidate pool for Shift 1: Previous Shift 2 workers FIRST, then remaining
@@ -143,7 +135,7 @@ const generateWeeklyRoster = async (weekStartDateInput) => {
     const reqCount = m.category === 'Metalizing' ? (m.minStaffRequired || 4) : 1;
 
     // Allocate Shift 2 FIRST using previous Shift 1 workers!
-    const staffShift2 = getQualifiedStaff(m, shift2CandidatePool, reqCount);
+    const staffShift2 = getStaffForMachine(m, shift2CandidatePool, reqCount);
     shift2Allocations.push({
       machineId: m.machineId,
       machineName: m.name,
@@ -152,7 +144,7 @@ const generateWeeklyRoster = async (weekStartDateInput) => {
     });
 
     // Allocate Shift 1 using previous Shift 2 workers!
-    const staffShift1 = getQualifiedStaff(m, shift1CandidatePool, reqCount);
+    const staffShift1 = getStaffForMachine(m, shift1CandidatePool, reqCount);
     shift1Allocations.push({
       machineId: m.machineId,
       machineName: m.name,
