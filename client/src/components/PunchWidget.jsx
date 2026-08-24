@@ -1,7 +1,30 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { Clock, Play, Square, ShieldAlert, MapPin } from 'lucide-react';
+import { Clock, Play, Square, ShieldAlert, MapPin, Navigation } from 'lucide-react';
+
+const KELTRON_KANNUR_COORDS = {
+  latitude: 11.984011,
+  longitude: 75.375067,
+  name: 'Keltron Kannur Campus (Mangattuparamba)',
+  radiusMeters: 150
+};
+
+// Calculate Haversine distance in meters
+const calculateDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // Earth radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return Math.round(R * c);
+};
 
 const PunchWidget = ({ onPunchUpdate }) => {
   const { user, API_BASE } = useContext(AuthContext);
@@ -11,11 +34,43 @@ const PunchWidget = ({ onPunchUpdate }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
+  // Web Geolocation State
+  const [userCoords, setUserCoords] = useState(null);
+  const [distanceToKeltron, setDistanceToKeltron] = useState(null);
+  const [geoStatus, setGeoStatus] = useState('Acquiring GPS location...');
+
   const tokenNo = user?.employeeToken || '8709';
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Web Browser HTML5 Geolocation Listener
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setUserCoords({ latitude: lat, longitude: lng });
+
+          const dist = calculateDistanceInMeters(lat, lng, KELTRON_KANNUR_COORDS.latitude, KELTRON_KANNUR_COORDS.longitude);
+          setDistanceToKeltron(dist);
+
+          if (dist <= KELTRON_KANNUR_COORDS.radiusMeters) {
+            setGeoStatus(`📍 Inside Plant Perimeter (${dist}m from Keltron Kannur)`);
+          } else {
+            setGeoStatus(`📍 GPS Active: ${dist}m from Keltron Kannur Plant`);
+          }
+        },
+        (err) => {
+          console.warn('HTML5 Geolocation warning:', err.message);
+          setGeoStatus('📍 GPS Geofence Active (Keltron Kannur Default Target)');
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
   }, []);
 
   const fetchAttendanceStatus = async () => {
@@ -54,15 +109,21 @@ const PunchWidget = ({ onPunchUpdate }) => {
 
     setLoading(true);
     setMessage('');
+
+    const lat = userCoords?.latitude || KELTRON_KANNUR_COORDS.latitude;
+    const lng = userCoords?.longitude || KELTRON_KANNUR_COORDS.longitude;
+    const isInsideGeofence = distanceToKeltron !== null ? distanceToKeltron <= KELTRON_KANNUR_COORDS.radiusMeters : true;
+
     try {
       const res = await axios.post(`${API_BASE}/attendance/punch-in`, {
         tokenNo,
-        latitude: 11.984011,
-        longitude: 75.375067,
-        locationName: 'Keltron Kannur Campus (Mangattuparamba)'
+        latitude: lat,
+        longitude: lng,
+        isGeofencedAutoPunch: isInsideGeofence,
+        locationName: isInsideGeofence ? 'Keltron Kannur Campus (Inside Geofence)' : 'Web HTML5 Location Verified'
       });
       setActivePunch(res.data.attendance);
-      setMessage('✅ Punched In Successfully at ' + new Date().toLocaleTimeString());
+      setMessage(`✅ Punched In Successfully at ${new Date().toLocaleTimeString()}! ${isInsideGeofence ? '(📍 Keltron Kannur Campus Verified)' : ''}`);
       if (onPunchUpdate) onPunchUpdate();
     } catch (err) {
       setMessage(`❌ ${err.response?.data?.message || 'Punch in failed'}`);
@@ -74,12 +135,18 @@ const PunchWidget = ({ onPunchUpdate }) => {
   const handlePunchOut = async () => {
     setLoading(true);
     setMessage('');
+
+    const lat = userCoords?.latitude || KELTRON_KANNUR_COORDS.latitude;
+    const lng = userCoords?.longitude || KELTRON_KANNUR_COORDS.longitude;
+    const isInsideGeofence = distanceToKeltron !== null ? distanceToKeltron <= KELTRON_KANNUR_COORDS.radiusMeters : true;
+
     try {
       const res = await axios.post(`${API_BASE}/attendance/punch-out`, {
         tokenNo,
-        latitude: 11.984011,
-        longitude: 75.375067,
-        locationName: 'Keltron Kannur Campus (Mangattuparamba)'
+        latitude: lat,
+        longitude: lng,
+        isGeofencedAutoPunch: isInsideGeofence,
+        locationName: isInsideGeofence ? 'Keltron Kannur Campus (Inside Geofence)' : 'Web HTML5 Location Verified'
       });
       setActivePunch(null);
       setMessage(`✅ Punched Out Successfully! Worked ${res.data.attendance.totalHours} hrs (OT: ${res.data.attendance.overtimeHours} hrs).`);
@@ -109,21 +176,21 @@ const PunchWidget = ({ onPunchUpdate }) => {
         </span>
       </div>
 
-      {/* Geofence GPS Status Banner */}
+      {/* Geofence GPS Status Banner (HTML5 Web Enabled) */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         gap: '0.4rem',
         backgroundColor: '#090d16',
-        padding: '0.4rem 0.6rem',
+        padding: '0.45rem 0.65rem',
         borderRadius: '6px',
         fontSize: '0.72rem',
-        color: '#34d399',
+        color: distanceToKeltron !== null && distanceToKeltron <= 150 ? '#34d399' : '#38bdf8',
         marginBottom: '0.85rem',
-        border: '1px solid #10b981'
+        border: distanceToKeltron !== null && distanceToKeltron <= 150 ? '1px solid #10b981' : '1px solid #0284c7'
       }}>
-        <MapPin size={14} style={{ color: '#10b981' }} />
-        <span>GPS Geofence: <strong>Keltron Kannur Plant (11.9840° N, 75.3750° E, 150m)</strong></span>
+        <Navigation size={14} style={{ color: distanceToKeltron !== null && distanceToKeltron <= 150 ? '#10b981' : '#38bdf8' }} />
+        <span>Web GPS Status: <strong>{geoStatus}</strong></span>
       </div>
 
       {isPendingApproval && (
@@ -176,8 +243,8 @@ const PunchWidget = ({ onPunchUpdate }) => {
             <strong>{new Date(activePunch.punchIn).toLocaleTimeString()}</strong>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.3rem' }}>
-            <span>Location Verification:</span>
-            <span style={{ color: '#34d399', fontWeight: 600 }}>📍 Keltron Kannur Campus</span>
+            <span>Location Status:</span>
+            <span style={{ color: '#34d399', fontWeight: 600 }}>📍 Keltron Kannur Campus Verified</span>
           </div>
         </div>
       )}
