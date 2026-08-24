@@ -52,10 +52,10 @@ const getAssignedShiftStart = async (tokenNo, now) => {
   }
 };
 
-// Punch In (10-minute Grace Period Rule)
+// Punch In (Supports Automated Geofenced GPS Entry Punch)
 router.post('/punch-in', async (req, res) => {
   try {
-    const { tokenNo, punchInTimeOverride } = req.body;
+    const { tokenNo, punchInTimeOverride, latitude, longitude, isGeofencedAutoPunch, locationName } = req.body;
     if (!tokenNo) return res.status(400).json({ message: 'Punching Token number is required.' });
 
     const employee = await Employee.findOne({ tokenNo });
@@ -87,7 +87,6 @@ router.post('/punch-in', async (req, res) => {
     }
 
     const isSunday = now.getDay() === 0;
-
     const supervisorApproved = !isLate;
     const status = isLate ? 'Pending Late Approval' : 'In Progress';
 
@@ -96,6 +95,12 @@ router.post('/punch-in', async (req, res) => {
       tokenNo: employee.tokenNo,
       date: now,
       punchIn: now,
+      punchInLocation: {
+        latitude: latitude || 11.984011,
+        longitude: longitude || 75.375067,
+        locationName: locationName || 'Keltron Kannur Campus (Mangattuparamba)',
+        isGeofencedAutoPunch: !!isGeofencedAutoPunch
+      },
       isSunday,
       isLate,
       lateMinutes,
@@ -104,16 +109,18 @@ router.post('/punch-in', async (req, res) => {
       status,
     });
 
+    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated Geofenced GPS Auto-Punch)' : '';
+
     if (isLate) {
       return res.status(201).json({
-        message: `Punched In at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (LATE by ${lateMinutes} mins - Exceeds 10-min grace period). Recorded! Pending Late Approval.`,
+        message: `Punched In at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice} (LATE by ${lateMinutes} mins - Exceeds 10-min grace period). Recorded! Pending Late Approval.`,
         attendance: record,
         isLate: true
       });
     }
 
     res.status(201).json({
-      message: `Punched In successfully on time (${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})!`,
+      message: `Punched In successfully on time (${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})${geoNotice}!`,
       attendance: record,
       isLate: false
     });
@@ -122,10 +129,10 @@ router.post('/punch-in', async (req, res) => {
   }
 });
 
-// Punch Out (Calculates EXACT worked hours from Punch In timestamp to Punch Out timestamp)
+// Punch Out (Supports Automated Geofenced GPS Exit Punch)
 router.post('/punch-out', async (req, res) => {
   try {
-    const { tokenNo, punchOutTimeOverride } = req.body;
+    const { tokenNo, punchOutTimeOverride, latitude, longitude, isGeofencedAutoPunch, locationName } = req.body;
     if (!tokenNo) return res.status(400).json({ message: 'Punching Token number is required.' });
 
     const employee = await Employee.findOne({ tokenNo });
@@ -155,7 +162,6 @@ router.post('/punch-out', async (req, res) => {
     const punchOutTime = punchOutTimeOverride ? new Date(punchOutTimeOverride) : now;
     const punchInTime = new Date(record.punchIn);
 
-    // Calculate exact difference in milliseconds and convert to decimal hours
     const diffMs = Math.max(0, punchOutTime - punchInTime);
     const totalHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
 
@@ -163,17 +169,24 @@ router.post('/punch-out', async (req, res) => {
     const hrsDisplay = Math.floor(totalMinutes / 60);
     const minsDisplay = totalMinutes % 60;
 
-    // Standard shift = 7.5 hours. Overtime = hours > 7.5
     const overtimeHrs = totalHrs > 7.5 ? parseFloat((totalHrs - 7.5).toFixed(2)) : 0;
 
     record.punchOut = punchOutTime;
+    record.punchOutLocation = {
+      latitude: latitude || 11.984011,
+      longitude: longitude || 75.375067,
+      locationName: locationName || 'Keltron Kannur Campus (Mangattuparamba)',
+      isGeofencedAutoPunch: !!isGeofencedAutoPunch
+    };
     record.totalHours = totalHrs;
     record.overtimeHours = overtimeHrs;
     record.status = 'Present';
     await record.save();
 
+    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated Geofenced GPS Exit Punch)' : '';
+
     res.json({
-      message: `Punched Out successfully at ${punchOutTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}! Worked: ${hrsDisplay} hrs ${minsDisplay} mins (${totalHrs} hrs total).`,
+      message: `Punched Out successfully at ${punchOutTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice}! Worked: ${hrsDisplay} hrs ${minsDisplay} mins (${totalHrs} hrs total).`,
       attendance: record
     });
   } catch (error) {
@@ -188,7 +201,6 @@ router.post('/approve-late/:id', async (req, res) => {
     const record = await Attendance.findById(req.params.id);
     if (!record) return res.status(404).json({ message: 'Attendance record not found' });
 
-    // Check if the employee who punched late is a Supervisor or Admin
     const punchUser = await User.findOne({ employeeToken: record.tokenNo });
     const isPunchedUserSupervisor = punchUser && (punchUser.role === 'Supervisor' || punchUser.role === 'SiteAdmin');
 

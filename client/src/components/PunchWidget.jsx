@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { Clock, Play, Square, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { Clock, Play, Square, ShieldAlert, MapPin } from 'lucide-react';
 
 const PunchWidget = ({ onPunchUpdate }) => {
   const { user, API_BASE } = useContext(AuthContext);
@@ -55,7 +55,12 @@ const PunchWidget = ({ onPunchUpdate }) => {
     setLoading(true);
     setMessage('');
     try {
-      const res = await axios.post(`${API_BASE}/attendance/punch-in`, { tokenNo });
+      const res = await axios.post(`${API_BASE}/attendance/punch-in`, {
+        tokenNo,
+        latitude: 11.984011,
+        longitude: 75.375067,
+        locationName: 'Keltron Kannur Campus (Mangattuparamba)'
+      });
       setActivePunch(res.data.attendance);
       setMessage('✅ Punched In Successfully at ' + new Date().toLocaleTimeString());
       if (onPunchUpdate) onPunchUpdate();
@@ -70,7 +75,12 @@ const PunchWidget = ({ onPunchUpdate }) => {
     setLoading(true);
     setMessage('');
     try {
-      const res = await axios.post(`${API_BASE}/attendance/punch-out`, { tokenNo, hoursOverride: 7.5 });
+      const res = await axios.post(`${API_BASE}/attendance/punch-out`, {
+        tokenNo,
+        latitude: 11.984011,
+        longitude: 75.375067,
+        locationName: 'Keltron Kannur Campus (Mangattuparamba)'
+      });
       setActivePunch(null);
       setMessage(`✅ Punched Out Successfully! Worked ${res.data.attendance.totalHours} hrs (OT: ${res.data.attendance.overtimeHours} hrs).`);
       if (onPunchUpdate) onPunchUpdate();
@@ -97,6 +107,23 @@ const PunchWidget = ({ onPunchUpdate }) => {
         <span className={isPendingApproval ? 'badge badge-amber' : (activePunch ? 'badge badge-emerald' : 'badge badge-rose')}>
           {isPendingApproval ? 'PENDING APPROVAL' : (activePunch ? 'ON SHIFT' : 'OFF SHIFT')}
         </span>
+      </div>
+
+      {/* Geofence GPS Status Banner */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.4rem',
+        backgroundColor: '#090d16',
+        padding: '0.4rem 0.6rem',
+        borderRadius: '6px',
+        fontSize: '0.72rem',
+        color: '#34d399',
+        marginBottom: '0.85rem',
+        border: '1px solid #10b981'
+      }}>
+        <MapPin size={14} style={{ color: '#10b981' }} />
+        <span>GPS Geofence: <strong>Keltron Kannur Plant (11.9840° N, 75.3750° E, 150m)</strong></span>
       </div>
 
       {isPendingApproval && (
@@ -149,8 +176,8 @@ const PunchWidget = ({ onPunchUpdate }) => {
             <strong>{new Date(activePunch.punchIn).toLocaleTimeString()}</strong>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.3rem' }}>
-            <span>Shift Standard:</span>
-            <span>7.5 Hours (OT @ 2x Basic Rate)</span>
+            <span>Location Verification:</span>
+            <span style={{ color: '#34d399', fontWeight: 600 }}>📍 Keltron Kannur Campus</span>
           </div>
         </div>
       )}

@@ -20,6 +20,18 @@ const attendanceSchema = new mongoose.Schema({
   punchOut: {
     type: Date,
   },
+  punchInLocation: {
+    latitude: { type: Number },
+    longitude: { type: Number },
+    locationName: { type: String, default: 'Keltron Kannur Campus (Mangattuparamba)' },
+    isGeofencedAutoPunch: { type: Boolean, default: false },
+  },
+  punchOutLocation: {
+    latitude: { type: Number },
+    longitude: { type: Number },
+    locationName: { type: String, default: 'Keltron Kannur Campus (Mangattuparamba)' },
+    isGeofencedAutoPunch: { type: Boolean, default: false },
+  },
   totalHours: {
     type: Number,
     default: 0,
