@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,12 +6,99 @@ import {
   TouchableOpacity,
   ScrollView,
   SafeAreaView,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
+import axios from 'axios';
+import { getApiUrlList } from '../config/api';
 
-export default function ShiftNoticeScreen({ onBack }) {
+export default function ShiftNoticeScreen({ user, onBack }) {
   const [selectedUnit, setSelectedUnit] = useState('Unit 2');
+  const [rosterList, setRosterList] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
 
-  const unit2Shift1 = [
+  const fetchRosters = async () => {
+    setLoading(true);
+    try {
+      const urls = await getApiUrlList();
+      for (const url of urls) {
+        try {
+          const res = await axios.get(`${url}/shifts/all`, { timeout: 6000 });
+          if (res.data && res.data.length > 0) {
+            setRosterList(res.data);
+            setCurrentIndex(0);
+          }
+          break;
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.error('Error fetching rosters:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRosters();
+  }, []);
+
+  const handleGenerateRoster = async () => {
+    setGenerating(true);
+    try {
+      const urls = await getApiUrlList();
+      let res = null;
+      for (const url of urls) {
+        try {
+          res = await axios.post(`${url}/shifts/auto-generate`, {
+            requesterRole: user?.role,
+          }, { timeout: 8000 });
+          if (res) break;
+        } catch (e) {}
+      }
+
+      if (res) {
+        Alert.alert('Shift Notice Generated', res.data.message);
+        await fetchRosters();
+      } else {
+        Alert.alert('Error', 'Unable to trigger shift generation on cloud server.');
+      }
+    } catch (err) {
+      Alert.alert('Generation Failed', err.response?.data?.message || err.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const currentRoster = rosterList[currentIndex] || null;
+
+  const formatDateSlash = (dateString) => {
+    if (!dateString) return '';
+    const d = new Date(dateString);
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  };
+
+  const formatDateDot = (dateString) => {
+    if (!dateString) return '';
+    const d = new Date(dateString);
+    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+  };
+
+  const issueDateStr = currentRoster?.noticeIssueDate
+    ? formatDateDot(currentRoster.noticeIssueDate)
+    : (currentRoster?.weekStartDate
+        ? formatDateDot(new Date(new Date(currentRoster.weekStartDate).getTime() - 3 * 24 * 60 * 60 * 1000))
+        : '14.08.2026');
+
+  const startDateStr = currentRoster?.weekStartDate ? formatDateSlash(currentRoster.weekStartDate) : '17/08/2026';
+  const endDateStr = currentRoster?.weekEndDate ? formatDateSlash(currentRoster.weekEndDate) : '22/08/2026';
+  const noticeRefNo = currentRoster?.noticeRefNo || 'PC12/XR/004';
+
+  const canGenerate = user && (user.role === 'Supervisor' || user.role === 'SiteAdmin');
+
+  // Static Fallback Data
+  const fallbackUnit2Shift1 = [
     { num: 1, tokenNo: '8709', name: 'ഹമൽ പി വി', machine: '700,705' },
     { num: 2, tokenNo: '1563', name: 'റചിൻ ലാൽ', machine: '' },
     { num: 3, tokenNo: '8662', name: 'ഷാഹിൽ അലി പി കെ', machine: '701' },
@@ -29,7 +116,7 @@ export default function ShiftNoticeScreen({ onBack }) {
     { num: 15, tokenNo: '8660', name: 'അശ്വന്ത് എ', machine: '' },
   ];
 
-  const unit2Shift2 = [
+  const fallbackUnit2Shift2 = [
     { num: 1, tokenNo: '8271', name: 'സുഗേഷ് കെ', machine: '700,705' },
     { num: 2, tokenNo: '8787', name: 'അർജുൻ', machine: '701' },
     { num: 3, tokenNo: '1497', name: 'ദിലീപ് എസ് കെ', machine: '710' },
@@ -49,7 +136,7 @@ export default function ShiftNoticeScreen({ onBack }) {
     { num: 17, tokenNo: '8747', name: 'റിഷഭ്', machine: '' },
   ];
 
-  const unit2Shift3 = [
+  const fallbackUnit2Shift3 = [
     { num: 18, tokenNo: '8713', name: 'യദുകൃഷ്ണ.എം.', machine: '700,705' },
     { num: 19, tokenNo: '8771', name: 'അഭിനവ്', machine: '710' },
     { num: 20, tokenNo: '8770', name: 'അജിത് ഗോപി', machine: '766' },
@@ -58,37 +145,52 @@ export default function ShiftNoticeScreen({ onBack }) {
     { num: 23, tokenNo: '8788', name: 'ദീക്ഷിത്', machine: '' },
   ];
 
-  const unit1Shift1 = [
-    { num: 1, tokenNo: '2202', name: 'അജയൻ', machine: '' },
-    { num: 2, tokenNo: '158', name: 'അഗസ്റ്റിൻബൈജു', machine: '450' },
-    { num: 3, tokenNo: '1496', name: 'വിജീഷ് എം', machine: '460' },
-    { num: 4, tokenNo: '8392', name: 'രഞ്ജിത്ത് വി', machine: '480' },
-    { num: 5, tokenNo: '8661', name: 'ഷഹദാൻ വി', machine: '470' },
-    { num: 6, tokenNo: '8356', name: 'ദിനിൽ ദാസ്', machine: '' },
-    { num: 7, tokenNo: '8706', name: 'ശരത്ത് എം.വി.', machine: '' },
-    { num: 8, tokenNo: '211', name: 'അനുവിൻ', machine: '' },
-  ];
-
-  const unit1Shift2 = [
-    { num: 1, tokenNo: '2187', name: 'ശ്രീജിൽ', machine: '' },
-    { num: 2, tokenNo: '561', name: 'മുഹാദ്', machine: '450' },
-    { num: 3, tokenNo: '1576', name: 'അഖിൽ വി പി', machine: '460' },
-    { num: 4, tokenNo: '8239', name: 'പ്രജൂൽ എം പി', machine: '480' },
-    { num: 5, tokenNo: '8591', name: 'നിവേദ് രവീന്ദ്രൻ', machine: '470' },
-    { num: 6, tokenNo: '8707', name: 'പ്രഷിൻ കെ', machine: '' },
-    { num: 7, tokenNo: '8752', name: 'ഹൃദ്യുൽ. കെ', machine: '' },
-    { num: 8, tokenNo: '491', name: 'അശ്വന്ത്', machine: '' },
-  ];
-
   return (
     <SafeAreaView style={styles.container}>
-      {/* Top Header */}
+      {/* Top Header Bar with Back Button */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Text style={styles.backBtnText}>← Back</Text>
+          <Text style={styles.backBtnText}>◀ Back to Home</Text>
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Weekly Shift Notice</Text>
       </View>
+
+      {/* Week Navigation Controls */}
+      <View style={styles.navBar}>
+        <TouchableOpacity
+          style={styles.navBtn}
+          disabled={currentIndex >= rosterList.length - 1}
+          onPress={() => setCurrentIndex(prev => Math.min(prev + 1, rosterList.length - 1))}
+        >
+          <Text style={styles.navBtnText}>◀ Previous Week</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.weekLabel}>
+          Week {rosterList.length - currentIndex} of {rosterList.length || 1}
+        </Text>
+
+        <TouchableOpacity
+          style={styles.navBtn}
+          disabled={currentIndex <= 0}
+          onPress={() => setCurrentIndex(prev => Math.max(prev - 1, 0))}
+        >
+          <Text style={styles.navBtnText}>Next Week ▶</Text>
+        </TouchableOpacity>
+      </View>
+
+      {canGenerate && (
+        <TouchableOpacity
+          style={styles.genBtn}
+          onPress={handleGenerateRoster}
+          disabled={generating}
+        >
+          {generating ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.genBtnText}>⚡ Auto-Generate Next Week Shift</Text>
+          )}
+        </TouchableOpacity>
+      )}
 
       {/* Unit Selector Toggle */}
       <View style={styles.toggleRow}>
@@ -119,15 +221,15 @@ export default function ShiftNoticeScreen({ onBack }) {
 
           <View style={styles.metaRow}>
             <Text style={styles.metaText}>പ്രേഷകർ: ഉല്പാദനയൂണിറ്റ് {selectedUnit === 'Unit 2' ? '2' : '1'} (MPP)</Text>
-            <Text style={styles.metaText}>സൂചന: പിസി12/XR/004</Text>
+            <Text style={styles.metaText}>സൂചന: {noticeRefNo}</Text>
           </View>
           <View style={styles.metaRow}>
             <Text style={styles.metaText}>സ്വീക: ഭരണനിർവഹണവകുപ്പ് / സുരക്ഷാവിഭാഗം</Text>
-            <Text style={styles.metaText}>തീയതി: 14.08.2026</Text>
+            <Text style={styles.metaText}>തീയതി: {issueDateStr}</Text>
           </View>
 
           <Text style={styles.noticeBody}>
-            ഉല്പാദനയൂണിറ്റ് {selectedUnit === 'Unit 2' ? '2' : '1'} ലെ തൊഴിലാളികൾ 17/08/2026 മുതൽ 22/08/2026 വരെ തന്നിരിക്കുന്ന ഷിഫ്റ്റ് പ്രകാരം ജോലി ചെയ്യേണ്ടതാണെന്ന് അറിയിച്ചുകൊള്ളുന്നു.
+            ഉല്പാദനയൂണിറ്റ് {selectedUnit === 'Unit 2' ? '2' : '1'} ലെ തൊഴിലാളികൾ {startDateStr} മുതൽ {endDateStr} വരെ തന്നിരിക്കുന്ന ഷിഫ്റ്റ് പ്രകാരം ജോലി ചെയ്യേണ്ടതാണെന്ന് അറിയിച്ചുകൊള്ളുന്നു.
           </Text>
 
           {/* Shift 1 */}
@@ -136,7 +238,7 @@ export default function ShiftNoticeScreen({ onBack }) {
               <Text style={styles.shiftTitle}>ഷിഫ്റ്റ്-1 (07.00AM-03.00PM)</Text>
               <Text style={styles.inCharge}>In Charge: 3085 ബിപിൻ</Text>
             </View>
-            {(selectedUnit === 'Unit 2' ? unit2Shift1 : unit1Shift1).map((item) => (
+            {fallbackUnit2Shift1.map((item) => (
               <View key={item.num} style={styles.empRow}>
                 <Text style={styles.empInfo}>
                   {item.num}. {item.tokenNo} {item.name}
@@ -152,7 +254,7 @@ export default function ShiftNoticeScreen({ onBack }) {
               <Text style={styles.shiftTitle}>ഷിഫ്റ്റ്-2 (03.00PM-11.00PM)</Text>
               <Text style={styles.inCharge}>In Charge: 851 രാഹുൽ</Text>
             </View>
-            {(selectedUnit === 'Unit 2' ? unit2Shift2 : unit1Shift2).map((item) => (
+            {fallbackUnit2Shift2.map((item) => (
               <View key={item.num} style={styles.empRow}>
                 <Text style={styles.empInfo}>
                   {item.num}. {item.tokenNo} {item.name}
@@ -162,13 +264,13 @@ export default function ShiftNoticeScreen({ onBack }) {
             ))}
           </View>
 
-          {/* Shift 3 (Only Unit 2 has Shift 3 minimal night crew) */}
+          {/* Shift 3 */}
           {selectedUnit === 'Unit 2' && (
             <View style={styles.shiftBlock}>
               <View style={styles.shiftHeaderRow}>
                 <Text style={styles.shiftTitle}>ഷിഫ്റ്റ്-3 (11.00PM-07.00AM)</Text>
               </View>
-              {unit2Shift3.map((item) => (
+              {fallbackUnit2Shift3.map((item) => (
                 <View key={item.num} style={styles.empRow}>
                   <Text style={styles.empInfo}>
                     {item.num}. {item.tokenNo} {item.name}
@@ -192,32 +294,75 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    paddingTop: 45,
+    paddingBottom: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
+    backgroundColor: '#1e293b',
   },
   backBtn: {
     backgroundColor: '#334155',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
-    marginRight: 14,
+    marginRight: 12,
   },
   backBtnText: {
-    color: '#f8fafc',
+    color: '#38bdf8',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   topBarTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: '#f8fafc',
+  },
+  navBar: {
+    flexDirection: 'row',
+    justify: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  navBtn: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  navBtnText: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  weekLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  genBtn: {
+    backgroundColor: '#6366f1',
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  genBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   toggleRow: {
     flexDirection: 'row',
     padding: 12,
     gap: 10,
     backgroundColor: '#1e293b',
+    marginTop: 8,
   },
   toggleBtn: {
     flex: 1,

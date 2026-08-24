@@ -61,6 +61,9 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         try {
           res = await axios.post(`${url}/attendance/punch-in`, {
             tokenNo: user.employeeToken,
+            latitude: 11.984011,
+            longitude: 75.375067,
+            locationName: 'Keltron Kannur Campus (Mangattuparamba)'
           }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
@@ -70,7 +73,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         Alert.alert('Punch In Success', res.data.message);
         fetchStatus();
       } else {
-        Alert.alert('Network Error', 'Unable to connect to server. Check Wi-Fi connection.');
+        Alert.alert('Network Error', 'Unable to connect to server. Check internet connection.');
       }
     } catch (err) {
       Alert.alert('Punch Failed', err.response?.data?.message || err.message);
@@ -88,6 +91,9 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         try {
           res = await axios.post(`${url}/attendance/punch-out`, {
             tokenNo: user.employeeToken,
+            latitude: 11.984011,
+            longitude: 75.375067,
+            locationName: 'Keltron Kannur Campus (Mangattuparamba)'
           }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
@@ -97,7 +103,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         Alert.alert('Punch Out Success', res.data.message);
         fetchStatus();
       } else {
-        Alert.alert('Network Error', 'Unable to connect to server. Check Wi-Fi connection.');
+        Alert.alert('Network Error', 'Unable to connect to server. Check internet connection.');
       }
     } catch (err) {
       Alert.alert('Punch Out Failed', err.response?.data?.message || err.message);
@@ -153,23 +159,45 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         )}
 
         <Text style={styles.graceNote}>
-          ℹ️ 10-Minute Grace Period Rule: Punch in within 10 minutes of shift start is auto-approved. Late punch &gt; 10 mins sends approval request to Supervisor.
+          📍 GPS Geofenced Auto-Punch: Keltron Kannur Campus (11.9840° N, 75.3750° E, 150m)
         </Text>
       </View>
 
-      {/* Navigation Shortcut Cards */}
+      {/* Full Navigation Options Grid (Matching Web Application Options) */}
       <View style={styles.navGrid}>
         <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('notice')}>
           <Text style={styles.navIcon}>📋</Text>
-          <Text style={styles.navTitle}>Weekly Shift Notice</Text>
-          <Text style={styles.navSubtitle}>View Unit 1 & Unit 2 Roster Sheets</Text>
+          <Text style={styles.navTitle}>Shift Notice</Text>
+          <Text style={styles.navSubtitle}>Unit 1 & 2 Roster Sheets</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('profile')}>
-          <Text style={styles.navIcon}>👤</Text>
-          <Text style={styles.navTitle}>My Profile & Password</Text>
-          <Text style={styles.navSubtitle}>Edit details or change password</Text>
+        <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('payroll')}>
+          <Text style={styles.navIcon}>💰</Text>
+          <Text style={styles.navTitle}>Payroll (25th-25th)</Text>
+          <Text style={styles.navSubtitle}>View Salary & OT Payslip</Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.navGrid}>
+        <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('maintenance')}>
+          <Text style={styles.navIcon}>🔧</Text>
+          <Text style={styles.navTitle}>Cleaning Alerts</Text>
+          <Text style={styles.navSubtitle}>Machine Status & Alerts</Text>
+        </TouchableOpacity>
+
+        {user.role === 'SiteAdmin' ? (
+          <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('admin')}>
+            <Text style={styles.navIcon}>🛡️</Text>
+            <Text style={styles.navTitle}>Admin Portal</Text>
+            <Text style={styles.navSubtitle}>Promote/Demote & Edits</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('profile')}>
+            <Text style={styles.navIcon}>👤</Text>
+            <Text style={styles.navTitle}>My Profile</Text>
+            <Text style={styles.navSubtitle}>Profile & Password</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Recent Attendance Card */}
@@ -207,6 +235,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingTop: 45,
   },
   userCard: {
     flexDirection: 'row',
@@ -324,15 +353,16 @@ const styles = StyleSheet.create({
   },
   graceNote: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: '#38bdf8',
     textAlign: 'center',
     marginTop: 14,
     lineHeight: 15,
+    fontWeight: '600',
   },
   navGrid: {
     flexDirection: 'row',
     justify: 'space-between',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   navCard: {
     backgroundColor: '#1e293b',
