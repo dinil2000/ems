@@ -45,30 +45,42 @@ export default function ShiftNoticeScreen({ user, onBack }) {
   }, []);
 
   const handleGenerateRoster = async () => {
-    setGenerating(true);
-    try {
-      const urls = await getApiUrlList();
-      let res = null;
-      for (const url of urls) {
-        try {
-          res = await axios.post(`${url}/shifts/auto-generate`, {
-            requesterRole: user?.role,
-          }, { timeout: 8000 });
-          if (res) break;
-        } catch (e) {}
-      }
+    Alert.alert(
+      'Generate Next Week Shift Notice',
+      'Generate automated shift schedule (Monday to Saturday)? All 1st Shift workers will rotate to 2nd Shift, and 2nd Shift workers to 1st Shift with Friday Issue Date!',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Generate Now',
+          onPress: async () => {
+            setGenerating(true);
+            try {
+              const urls = await getApiUrlList();
+              let res = null;
+              for (const url of urls) {
+                try {
+                  res = await axios.post(`${url}/shifts/auto-generate`, {
+                    requesterRole: user?.role,
+                  }, { timeout: 8000 });
+                  if (res) break;
+                } catch (e) {}
+              }
 
-      if (res) {
-        Alert.alert('Shift Notice Generated', res.data.message);
-        await fetchRosters();
-      } else {
-        Alert.alert('Error', 'Unable to trigger shift generation on cloud server.');
-      }
-    } catch (err) {
-      Alert.alert('Generation Failed', err.response?.data?.message || err.message);
-    } finally {
-      setGenerating(false);
-    }
+              if (res) {
+                Alert.alert('Success', res.data.message);
+                await fetchRosters();
+              } else {
+                Alert.alert('Error', 'Unable to trigger shift generation.');
+              }
+            } catch (err) {
+              Alert.alert('Generation Failed', err.response?.data?.message || err.message);
+            } finally {
+              setGenerating(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const currentRoster = rosterList[currentIndex] || null;
@@ -97,7 +109,30 @@ export default function ShiftNoticeScreen({ user, onBack }) {
 
   const canGenerate = user && (user.role === 'Supervisor' || user.role === 'SiteAdmin');
 
-  // Static Fallback Data
+  // Extract shift slots dynamically from current active roster
+  const getShiftAllocations = (shiftTypeKeyword) => {
+    if (!currentRoster || !currentRoster.shifts) return null;
+    const slot = currentRoster.shifts.find(s => s.shiftType && s.shiftType.includes(shiftTypeKeyword));
+    if (!slot || !slot.allocations || slot.allocations.length === 0) return null;
+
+    let count = 1;
+    const items = [];
+    slot.allocations.forEach(alloc => {
+      if (alloc.assignedEmployees && alloc.assignedEmployees.length > 0) {
+        alloc.assignedEmployees.forEach(emp => {
+          items.push({
+            num: count++,
+            tokenNo: emp.tokenNo,
+            name: emp.name,
+            machine: alloc.machineId && alloc.machineId !== 'GENERAL_MPP' ? alloc.machineId : ''
+          });
+        });
+      }
+    });
+    return items.length > 0 ? items : null;
+  };
+
+  // Fallback data matching official physical notice sheet
   const fallbackUnit2Shift1 = [
     { num: 1, tokenNo: '8709', name: 'ഹമൽ പി വി', machine: '700,705' },
     { num: 2, tokenNo: '1563', name: 'റചിൻ ലാൽ', machine: '' },
@@ -145,6 +180,14 @@ export default function ShiftNoticeScreen({ user, onBack }) {
     { num: 23, tokenNo: '8788', name: 'ദീക്ഷിത്', machine: '' },
   ];
 
+  const parsedShift1 = getShiftAllocations('Shift-1');
+  const parsedShift2 = getShiftAllocations('Shift-2');
+  const parsedShift3 = getShiftAllocations('Shift-3');
+
+  const displayShift1 = parsedShift1 || fallbackUnit2Shift1;
+  const displayShift2 = parsedShift2 || fallbackUnit2Shift2;
+  const displayShift3 = parsedShift3 || fallbackUnit2Shift3;
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Top Header Bar with Back Button */}
@@ -158,11 +201,11 @@ export default function ShiftNoticeScreen({ user, onBack }) {
       {/* Week Navigation Controls */}
       <View style={styles.navBar}>
         <TouchableOpacity
-          style={styles.navBtn}
+          style={[styles.navBtn, currentIndex >= rosterList.length - 1 && styles.navBtnDisabled]}
           disabled={currentIndex >= rosterList.length - 1}
           onPress={() => setCurrentIndex(prev => Math.min(prev + 1, rosterList.length - 1))}
         >
-          <Text style={styles.navBtnText}>◀ Previous Week</Text>
+          <Text style={styles.navBtnText}>◀ Prev Week</Text>
         </TouchableOpacity>
 
         <Text style={styles.weekLabel}>
@@ -170,7 +213,7 @@ export default function ShiftNoticeScreen({ user, onBack }) {
         </Text>
 
         <TouchableOpacity
-          style={styles.navBtn}
+          style={[styles.navBtn, currentIndex <= 0 && styles.navBtnDisabled]}
           disabled={currentIndex <= 0}
           onPress={() => setCurrentIndex(prev => Math.max(prev - 1, 0))}
         >
@@ -199,7 +242,7 @@ export default function ShiftNoticeScreen({ user, onBack }) {
           onPress={() => setSelectedUnit('Unit 2')}
         >
           <Text style={[styles.toggleText, selectedUnit === 'Unit 2' && styles.toggleTextActive]}>
-            Unit 2 Sheet
+            Unit 2 Sheet (MPP)
           </Text>
         </TouchableOpacity>
 
@@ -214,63 +257,34 @@ export default function ShiftNoticeScreen({ user, onBack }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Notice Sheet Component */}
-        <View style={styles.paperSheet}>
-          <Text style={styles.sheetHeader}>കെൽട്രോൺ കോംപണന്റ് കോംപ്ലക്സ് ലിമിറ്റഡ്</Text>
-          <Text style={styles.sheetSubHeader}>കുറിപ്പ്</Text>
+        {loading ? (
+          <ActivityIndicator size="large" color="#38bdf8" style={{ marginTop: 40 }} />
+        ) : (
+          /* Official Printed Sheet Layout matching physical notice */
+          <View style={styles.paperSheet}>
+            <Text style={styles.sheetHeader}>കെൽട്രോൺ കോംപണന്റ് കോംപ്ലക്സ് ലിമിറ്റഡ്</Text>
+            <Text style={styles.sheetSubHeader}>കുറിപ്പ്</Text>
 
-          <View style={styles.metaRow}>
-            <Text style={styles.metaText}>പ്രേഷകർ: ഉല്പാദനയൂണിറ്റ് {selectedUnit === 'Unit 2' ? '2' : '1'} (MPP)</Text>
-            <Text style={styles.metaText}>സൂചന: {noticeRefNo}</Text>
-          </View>
-          <View style={styles.metaRow}>
-            <Text style={styles.metaText}>സ്വീക: ഭരണനിർവഹണവകുപ്പ് / സുരക്ഷാവിഭാഗം</Text>
-            <Text style={styles.metaText}>തീയതി: {issueDateStr}</Text>
-          </View>
-
-          <Text style={styles.noticeBody}>
-            ഉല്പാദനയൂണിറ്റ് {selectedUnit === 'Unit 2' ? '2' : '1'} ലെ തൊഴിലാളികൾ {startDateStr} മുതൽ {endDateStr} വരെ തന്നിരിക്കുന്ന ഷിഫ്റ്റ് പ്രകാരം ജോലി ചെയ്യേണ്ടതാണെന്ന് അറിയിച്ചുകൊള്ളുന്നു.
-          </Text>
-
-          {/* Shift 1 */}
-          <View style={styles.shiftBlock}>
-            <View style={styles.shiftHeaderRow}>
-              <Text style={styles.shiftTitle}>ഷിഫ്റ്റ്-1 (07.00AM-03.00PM)</Text>
-              <Text style={styles.inCharge}>In Charge: 3085 ബിപിൻ</Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaText}>പ്രേഷകർ: ഉല്പാദനയൂണിറ്റ് {selectedUnit === 'Unit 2' ? '2' : '1'} (MPP)</Text>
+              <Text style={styles.metaText}>സൂചന: {noticeRefNo}</Text>
             </View>
-            {fallbackUnit2Shift1.map((item) => (
-              <View key={item.num} style={styles.empRow}>
-                <Text style={styles.empInfo}>
-                  {item.num}. {item.tokenNo} {item.name}
-                </Text>
-                <Text style={styles.machineNo}>{item.machine}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Shift 2 */}
-          <View style={styles.shiftBlock}>
-            <View style={styles.shiftHeaderRow}>
-              <Text style={styles.shiftTitle}>ഷിഫ്റ്റ്-2 (03.00PM-11.00PM)</Text>
-              <Text style={styles.inCharge}>In Charge: 851 രാഹുൽ</Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaText}>സ്വീക: ഭരണനിർവഹണവകുപ്പ് / സുരക്ഷാവിഭാഗം</Text>
+              <Text style={styles.metaText}>തീയതി: {issueDateStr}</Text>
             </View>
-            {fallbackUnit2Shift2.map((item) => (
-              <View key={item.num} style={styles.empRow}>
-                <Text style={styles.empInfo}>
-                  {item.num}. {item.tokenNo} {item.name}
-                </Text>
-                <Text style={styles.machineNo}>{item.machine}</Text>
-              </View>
-            ))}
-          </View>
 
-          {/* Shift 3 */}
-          {selectedUnit === 'Unit 2' && (
+            <Text style={styles.noticeBody}>
+              ഉല്പാദനയൂണിറ്റ് {selectedUnit === 'Unit 2' ? '2' : '1'} ലെ തൊഴിലാളികൾ {startDateStr} മുതൽ {endDateStr} വരെ തന്നിരിക്കുന്ന ഷിഫ്റ്റ് പ്രകാരം ജോലി ചെയ്യേണ്ടതാണെന്ന് അറിയിച്ചുകൊള്ളുന്നു.
+            </Text>
+
+            {/* Shift 1 */}
             <View style={styles.shiftBlock}>
               <View style={styles.shiftHeaderRow}>
-                <Text style={styles.shiftTitle}>ഷിഫ്റ്റ്-3 (11.00PM-07.00AM)</Text>
+                <Text style={styles.shiftTitle}>ഷിഫ്റ്റ്-1 (07.00AM-03.00PM)</Text>
+                <Text style={styles.inCharge}>In Charge: 3085 ബിപിൻ</Text>
               </View>
-              {fallbackUnit2Shift3.map((item) => (
+              {displayShift1.map((item) => (
                 <View key={item.num} style={styles.empRow}>
                   <Text style={styles.empInfo}>
                     {item.num}. {item.tokenNo} {item.name}
@@ -279,8 +293,53 @@ export default function ShiftNoticeScreen({ user, onBack }) {
                 </View>
               ))}
             </View>
-          )}
-        </View>
+
+            {/* Shift 2 */}
+            <View style={styles.shiftBlock}>
+              <View style={styles.shiftHeaderRow}>
+                <Text style={styles.shiftTitle}>ഷിഫ്റ്റ്-2 (03.00PM-11.00PM)</Text>
+                <Text style={styles.inCharge}>In Charge: 851 രാഹുൽ</Text>
+              </View>
+              {displayShift2.map((item) => (
+                <View key={item.num} style={styles.empRow}>
+                  <Text style={styles.empInfo}>
+                    {item.num}. {item.tokenNo} {item.name}
+                  </Text>
+                  <Text style={styles.machineNo}>{item.machine}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Shift 3 */}
+            {selectedUnit === 'Unit 2' && (
+              <View style={styles.shiftBlock}>
+                <View style={styles.shiftHeaderRow}>
+                  <Text style={styles.shiftTitle}>ഷിഫ്റ്റ്-3 (11.00PM-07.00AM)</Text>
+                </View>
+                {displayShift3.map((item) => (
+                  <View key={item.num} style={styles.empRow}>
+                    <Text style={styles.empInfo}>
+                      {item.num}. {item.tokenNo} {item.name}
+                    </Text>
+                    <Text style={styles.machineNo}>{item.machine}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Footer */}
+            <View style={{ marginTop: 16, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#000', borderStyle: 'dashed' }}>
+              <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#000' }}>
+                NB: മറ്റുമുള്ള ജീവനക്കാർ ജനറൽ ഷിഫ്റ്റിൽ ജോലി ചെയ്യേണ്ടതാണെന്ന് അറിയിച്ചു കൊള്ളുന്നു.
+              </Text>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 }}>
+                <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#000' }}>എസ്. എ. സി.</Text>
+                <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#000' }}>വകുപ്പ്മേധാവി</Text>
+              </View>
+            </View>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -303,7 +362,7 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     backgroundColor: '#334155',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
     marginRight: 12,
@@ -320,7 +379,7 @@ const styles = StyleSheet.create({
   },
   navBar: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#0f172a',
     paddingHorizontal: 16,
@@ -333,6 +392,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
+  },
+  navBtnDisabled: {
+    opacity: 0.4,
   },
   navBtnText: {
     color: '#38bdf8',
@@ -359,8 +421,9 @@ const styles = StyleSheet.create({
   },
   toggleRow: {
     flexDirection: 'row',
-    padding: 12,
-    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
     backgroundColor: '#1e293b',
     marginTop: 8,
   },
@@ -368,7 +431,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 6,
     backgroundColor: '#0f172a',
   },
   toggleBtnActive: {
@@ -377,7 +440,7 @@ const styles = StyleSheet.create({
   toggleText: {
     color: '#94a3b8',
     fontWeight: '600',
-    fontSize: 13,
+    fontSize: 12,
   },
   toggleTextActive: {
     color: '#ffffff',
@@ -385,79 +448,82 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: 40,
   },
   paperSheet: {
     backgroundColor: '#ffffff',
     borderRadius: 8,
-    padding: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
   },
   sheetHeader: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#000000',
     textAlign: 'center',
   },
   sheetSubHeader: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#000000',
     textAlign: 'center',
-    marginVertical: 4,
+    marginVertical: 2,
   },
   metaRow: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     marginVertical: 2,
   },
   metaText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 'bold',
     color: '#000000',
   },
   noticeBody: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#000000',
-    marginVertical: 12,
-    lineHeight: 16,
+    marginVertical: 10,
+    lineHeight: 15,
   },
   shiftBlock: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   shiftHeaderRow: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     borderBottomWidth: 1,
     borderBottomColor: '#000000',
-    paddingBottom: 4,
-    marginBottom: 6,
+    paddingBottom: 3,
+    marginBottom: 4,
   },
   shiftTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#000000',
   },
   inCharge: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#000000',
   },
   empRow: {
     flexDirection: 'row',
-    justify: 'space-between',
-    paddingVertical: 3,
+    justifyContent: 'space-between',
+    paddingVertical: 2,
   },
   empInfo: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#000000',
     flex: 1,
   },
   machineNo: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#000000',
-    width: 60,
+    width: 65,
     textAlign: 'right',
   },
 });

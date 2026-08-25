@@ -36,6 +36,7 @@ const AdminPage = () => {
     qualification: 'ITI',
     experienceYears: 0,
     basicSalary: 0,
+    dailyRate: 825.94,
     gender: 'Male',
     unit: 'Unit 2',
     machineExpertise: []
@@ -131,6 +132,7 @@ const AdminPage = () => {
       qualification: empProfile.qualification || 'ITI',
       experienceYears: empProfile.experienceYears || 0,
       basicSalary: empProfile.basicSalary || 0,
+      dailyRate: empProfile.dailyRate || 825.94,
       gender: empProfile.gender || 'Male',
       unit: empProfile.unit || 'Unit 2',
       machineExpertise: empProfile.machineExpertise || []
@@ -471,7 +473,7 @@ const AdminPage = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
                 <div className="form-group">
                   <label className="form-label">Qualification *</label>
                   <select
@@ -486,7 +488,7 @@ const AdminPage = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Experience (Years)</label>
+                  <label className="form-label">Exp (Yrs)</label>
                   <input
                     type="number"
                     className="form-input"
@@ -496,12 +498,23 @@ const AdminPage = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Basic Salary (₹)</label>
+                  <label className="form-label">Daily Rate (₹/day) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="form-input"
+                    value={editForm.dailyRate}
+                    onChange={(e) => setEditForm({ ...editForm, dailyRate: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Monthly Base (₹)</label>
                   <input
                     type="number"
                     className="form-input"
                     value={editForm.basicSalary}
-                    onChange={(e) => setEditForm({ ...editForm, basicSalary: e.target.value })}
+                    onChange={(e) => setEditForm({ ...editForm, basicSalary: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
               </div>

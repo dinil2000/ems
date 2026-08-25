@@ -29,6 +29,7 @@ const RegisterEmployeeModal = ({ isOpen, onClose, onSuccess }) => {
     qualification: 'ITI',
     experienceYears: 2,
     gender: 'Male',
+    dailyRate: '825.94',
     basicSalary: '',
     unit: 'Unit 2',
     machineExpertise: ['700', '705'],
@@ -73,10 +74,14 @@ const RegisterEmployeeModal = ({ isOpen, onClose, onSuccess }) => {
     setLoading(true);
     setMessage('');
 
+    const salary = formData.basicSalary ? parseFloat(formData.basicSalary) : calculatedSalary;
+    const rate = formData.dailyRate ? parseFloat(formData.dailyRate) : Math.round((salary / 26) * 100) / 100;
+
     const payload = {
       ...formData,
       role: 'Employee', // Role is strictly Employee for public registration
-      basicSalary: formData.basicSalary ? parseFloat(formData.basicSalary) : calculatedSalary,
+      basicSalary: salary,
+      dailyRate: rate,
     };
 
     const res = await register(payload);
@@ -232,13 +237,16 @@ const RegisterEmployeeModal = ({ isOpen, onClose, onSuccess }) => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Registration Role</label>
+              <label className="form-label">Daily Basic Rate (₹/day) *</label>
               <input
-                type="text"
-                value="Employee (Pending Activation)"
-                disabled
+                type="number"
+                step="0.01"
+                name="dailyRate"
+                placeholder="825.94"
+                value={formData.dailyRate}
+                onChange={handleChange}
                 className="form-input"
-                style={{ opacity: 0.7, backgroundColor: '#090d16' }}
+                required
               />
             </div>
           </div>

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  TextInput,
 } from 'react-native';
 import axios from 'axios';
 import { getApiUrlList } from '../config/api';
@@ -15,14 +16,18 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchToken, setSearchToken] = useState(user?.employeeToken || '');
+
+  const isSupervisorOrAdmin = user?.role === 'Supervisor' || user?.role === 'SiteAdmin';
 
   const fetchHistory = async () => {
     setLoading(true);
     try {
+      const targetToken = searchToken || user?.employeeToken || '8709';
       const urls = await getApiUrlList();
       for (const url of urls) {
         try {
-          const res = await axios.get(`${url}/attendance/employee/${user.employeeToken}`, { timeout: 6000 });
+          const res = await axios.get(`${url}/attendance/employee/${targetToken}`, { timeout: 6000 });
           if (res.data) {
             setRecords(res.data);
           }
@@ -38,7 +43,7 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
 
   useEffect(() => {
     fetchHistory();
-  }, []);
+  }, [searchToken]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -62,6 +67,26 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
         <Text style={styles.headerTitle}>Punching History Log</Text>
       </View>
 
+      {/* Supervisor Search Token Bar */}
+      {isSupervisorOrAdmin && (
+        <View style={styles.searchBar}>
+          <Text style={styles.searchLabel}>Search Employee Token #:</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="e.g. 8709, 3085, 8356"
+              placeholderTextColor="#64748b"
+              value={searchToken}
+              onChangeText={setSearchToken}
+              keyboardType="numeric"
+            />
+            <TouchableOpacity style={styles.searchBtn} onPress={fetchHistory}>
+              <Text style={styles.searchBtnText}>Search 🔍</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#38bdf8" />}
@@ -69,7 +94,7 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
         <View style={styles.bannerCard}>
           <Text style={styles.bannerTitle}>📊 Monthly Punching & Attendance Logs</Text>
           <Text style={styles.bannerSubtitle}>
-            Token #{user.employeeToken} • {user.employeeProfile?.name || 'Employee'}
+            Viewing Token #{searchToken || user.employeeToken} • {records.length} Recorded Entries
           </Text>
         </View>
 
@@ -80,7 +105,8 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
             const dateStr = new Date(att.date).toLocaleDateString('en-IN', {
               weekday: 'short',
               month: 'short',
-              day: 'numeric'
+              day: 'numeric',
+              year: 'numeric'
             });
             const punchInStr = att.punchIn ? new Date(att.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A';
             const punchOutStr = att.punchOut ? new Date(att.punchOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A';
@@ -97,6 +123,11 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
                 </View>
 
                 <View style={styles.divider} />
+
+                <View style={styles.row}>
+                  <Text style={styles.label}>Shift Start:</Text>
+                  <Text style={[styles.value, { color: '#38bdf8' }]}>{att.shiftStartTime || '08:30'}</Text>
+                </View>
 
                 <View style={styles.row}>
                   <Text style={styles.label}>Punch In:</Text>
@@ -116,13 +147,13 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
                 </View>
 
                 <View style={styles.locationTag}>
-                  <Text style={styles.locationText}>📍 Location: Keltron Kannur Campus (Verified)</Text>
+                  <Text style={styles.locationText}>📍 Keltron Kannur Campus (Geofence Verified)</Text>
                 </View>
               </View>
             );
           })
         ) : (
-          <Text style={styles.emptyText}>No attendance history records found for your account.</Text>
+          <Text style={styles.emptyText}>No attendance records found for Token #{searchToken || user?.employeeToken}.</Text>
         )}
       </ScrollView>
     </View>
@@ -173,42 +204,77 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#f8fafc',
   },
+  searchBar: {
+    backgroundColor: '#1e293b',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  searchLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#334155',
+    color: '#f8fafc',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 13,
+  },
+  searchBtn: {
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    justifyContent: 'center',
+  },
+  searchBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   content: {
     padding: 16,
+    paddingBottom: 40,
   },
   bannerCard: {
     backgroundColor: '#1e293b',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    padding: 14,
+    marginBottom: 14,
     borderLeftWidth: 4,
     borderLeftColor: '#38bdf8',
   },
   bannerTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#f8fafc',
   },
   bannerSubtitle: {
     fontSize: 12,
     color: '#94a3b8',
-    marginTop: 4,
+    marginTop: 2,
   },
   logCard: {
     backgroundColor: '#1e293b',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    padding: 14,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#334155',
   },
   cardHeader: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
   dateText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: '#f8fafc',
   },
@@ -254,26 +320,27 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: '#334155',
-    marginVertical: 10,
+    marginVertical: 8,
   },
   row: {
     flexDirection: 'row',
-    justify: 'space-between',
-    paddingVertical: 3,
+    justifyContent: 'space-between',
+    paddingVertical: 2,
   },
   label: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#94a3b8',
   },
   value: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
+    color: '#f8fafc',
   },
   locationTag: {
     backgroundColor: '#0f172a',
     padding: 6,
     borderRadius: 6,
-    marginTop: 8,
+    marginTop: 6,
   },
   locationText: {
     fontSize: 11,
