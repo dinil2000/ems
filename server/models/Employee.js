@@ -31,6 +31,10 @@ const employeeSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  dailyRate: {
+    type: Number,
+    default: 825.94, // Daily basic rate (Rate per day, e.g. 825.94)
+  },
   machineExpertise: [{
     type: String,
     required: true,
@@ -62,12 +66,15 @@ const employeeSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-// Auto-calculate basic salary before saving if not explicitly set
+// Auto-calculate basic salary and daily rate before saving if not explicitly set
 employeeSchema.pre('save', function (next) {
   if (!this.basicSalary) {
     const base = this.qualification === 'Diploma' ? 24000 : 18000;
     const expBonus = (this.experienceYears || 0) * (this.qualification === 'Diploma' ? 2000 : 1500);
     this.basicSalary = base + expBonus;
+  }
+  if (!this.dailyRate) {
+    this.dailyRate = Math.round((this.basicSalary / 26) * 100) / 100 || 825.94;
   }
   next();
 });

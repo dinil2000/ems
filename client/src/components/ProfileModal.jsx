@@ -1,7 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { User, Lock, CheckSquare, Square, X, Save, KeyRound, ShieldCheck } from 'lucide-react';
+import { User, Lock, CheckSquare, Square, X, Save, KeyRound } from 'lucide-react';
 
 const MPP_MACHINES = [
   { id: '700', name: 'Winding Machine #700', cat: 'Winding' },
@@ -28,6 +28,7 @@ const ProfileModal = ({ isOpen, onClose }) => {
   const [name, setName] = useState(profile.name || user?.employeeToken || '');
   const [qualification, setQualification] = useState(profile.qualification || 'ITI');
   const [experienceYears, setExperienceYears] = useState(profile.experienceYears || 0);
+  const [dailyRate, setDailyRate] = useState(profile.dailyRate || 825.94);
   const [gender, setGender] = useState(profile.gender || 'Male');
   const [machineExpertise, setMachineExpertise] = useState(profile.machineExpertise || ['700', '705']);
 
@@ -58,6 +59,7 @@ const ProfileModal = ({ isOpen, onClose }) => {
         name,
         qualification,
         experienceYears: parseInt(experienceYears) || 0,
+        dailyRate: parseFloat(dailyRate) || 825.94,
         gender,
         machineExpertise
       });
@@ -70,6 +72,7 @@ const ProfileModal = ({ isOpen, onClose }) => {
           name,
           qualification,
           experienceYears: parseInt(experienceYears) || 0,
+          dailyRate: parseFloat(dailyRate) || 825.94,
           gender,
           machineExpertise
         }
@@ -189,7 +192,7 @@ const ProfileModal = ({ isOpen, onClose }) => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem' }}>
               <div className="form-group">
                 <label className="form-label">Qualification *</label>
                 <select value={qualification} onChange={(e) => setQualification(e.target.value)} className="form-select">
@@ -206,6 +209,18 @@ const ProfileModal = ({ isOpen, onClose }) => {
                   max="40"
                   value={experienceYears}
                   onChange={(e) => setExperienceYears(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Daily Basic Rate (₹/day) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={dailyRate}
+                  onChange={(e) => setDailyRate(e.target.value)}
+                  placeholder="825.94"
                   className="form-input"
                 />
               </div>
