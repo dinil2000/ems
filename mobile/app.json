@@ -16,8 +16,21 @@
         "backgroundColor": "#0f172a"
       },
       "package": "com.keltron.mpp.ems",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ]
     },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Keltron EMS to use your location for automated factory geofence punch-in & punch-out."
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "213f645b-b14b-48bf-9456-ac5893556050"
