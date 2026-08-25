@@ -26,18 +26,37 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
   const [distanceMeters, setDistanceMeters] = useState(null);
   const [autoPunchEnabled, setAutoPunchEnabled] = useState(true);
   const [autoPunchMessage, setAutoPunchMessage] = useState('');
+  const [hasBgPermission, setHasBgPermission] = useState(true);
 
   const prevInsideRef = useRef(null);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setClockTime(new Date().toLocaleTimeString());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const checkBgPermission = async () => {
+    try {
+      const { status } = await Location.getBackgroundPermissionsAsync();
+      setHasBgPermission(status === 'granted');
+    } catch (e) {}
+  };
 
-  // Initialize Background Geofencing Task (700m radius)
+  const requestBgPerm = async () => {
+    try {
+      const { status } = await Location.requestBackgroundPermissionsAsync();
+      if (status === 'granted') {
+        setHasBgPermission(true);
+        await setupGeofenceTracking();
+        Alert.alert('Background Location Enabled', 'Automated Punch In/Out will now run automatically in the background even when app is closed!');
+      } else {
+        Alert.alert(
+          'Background Permission Required',
+          'To auto-punch without opening the app, please go to your phone Settings > Apps > Keltron MPP EMS > Permissions > Location and select "Allow all the time".'
+        );
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
   useEffect(() => {
+    checkBgPermission();
     setupGeofenceTracking().catch(e => console.log('Geofence setup note:', e.message));
   }, []);
 
@@ -283,6 +302,16 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         </TouchableOpacity>
       </View>
 
+      {/* Background Permission Notification Banner if needed */}
+      {!hasBgPermission && (
+        <TouchableOpacity style={styles.bgPermBanner} onPress={requestBgPerm}>
+          <Text style={styles.bgPermTitle}>📍 Background Location Setup Needed</Text>
+          <Text style={styles.bgPermText}>
+            To punch in/out automatically without opening the app, tap here to enable "Allow all the time".
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {/* Digital Clock & 700m Automated Geofence Punch Widget */}
       <View style={styles.clockCard}>
         <Text style={styles.clockLabel}>MPP 700M AUTOMATED GEOFENCE PUNCHING</Text>
@@ -453,6 +482,25 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 12,
     fontWeight: '600',
+  },
+  bgPermBanner: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: '#f59e0b',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  bgPermTitle: {
+    color: '#fbbf24',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 3,
+  },
+  bgPermText: {
+    color: '#fde68a',
+    fontSize: 11,
+    lineHeight: 15,
   },
   clockCard: {
     backgroundColor: '#1e293b',

@@ -3,6 +3,10 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, BackHandler, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Ensure TaskManager background tasks are defined globally at root level
+import './src/utils/geofence';
+import { setupGeofenceTracking } from './src/utils/geofence';
+
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ShiftNoticeScreen from './src/screens/ShiftNoticeScreen';
@@ -16,6 +20,11 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentScreen, setCurrentScreen] = useState('home'); // 'home', 'notice', 'history', 'payroll', 'maintenance', 'admin', 'profile'
+
+  // Initialize background geofencing & persistent location service
+  useEffect(() => {
+    setupGeofenceTracking().catch(e => console.log('Geofence auto-init:', e.message));
+  }, []);
 
   useEffect(() => {
     const checkSession = async () => {

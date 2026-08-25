@@ -24,14 +24,22 @@
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "WAKE_LOCK",
+        "RECEIVE_BOOT_COMPLETED"
       ]
     },
     "plugins": [
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Keltron EMS to use your location for automated factory geofence punch-in & punch-out."
+          "locationAlwaysAndWhenInUsePermission": "Allow Keltron EMS to use your location at all times for automated factory geofence punch-in & punch-out even when the app is closed.",
+          "locationAlwaysPermission": "Allow Keltron EMS to access your background location to automatically punch in and out when entering/exiting the factory perimeter.",
+          "locationWhenInUsePermission": "Allow Keltron EMS to access your location for factory distance calculation.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ]
     ],
