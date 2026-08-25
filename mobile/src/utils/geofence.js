@@ -4,10 +4,10 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const KELTRON_KANNUR_GEOFENCE = {
-  identifier: 'KELTRON_KANNUR_PLANT_100M',
+  identifier: 'KELTRON_KANNUR_PLANT_700M',
   latitude: 11.983878,
   longitude: 75.374253,
-  radius: 100, // Exact 100-meter company perimeter as requested
+  radius: 700, // 700-meter company perimeter as requested
   notifyOnEnter: true,
   notifyOnExit: true,
 };
@@ -30,22 +30,22 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data: { eventType, region },
     const tokenNo = user.employeeToken;
 
     if (eventType === Location.GeofencingEventType.Enter) {
-      console.log(`📍 Entered 100m Keltron Kannur Plant boundary! Automated Punch In for Token #${tokenNo}`);
+      console.log(`📍 Entered 700m Keltron Kannur Plant boundary! Automated Punch In for Token #${tokenNo}`);
       await axios.post(`${apiUrl}/attendance/punch-in`, {
         tokenNo,
         latitude: KELTRON_KANNUR_GEOFENCE.latitude,
         longitude: KELTRON_KANNUR_GEOFENCE.longitude,
         isGeofencedAutoPunch: true,
-        locationName: 'Keltron Kannur Plant (Inside 100m Geofence)'
+        locationName: 'Keltron Kannur Plant (Inside 700m Geofence)'
       }, { timeout: 8000 });
     } else if (eventType === Location.GeofencingEventType.Exit) {
-      console.log(`👋 Exited 100m Keltron Kannur Plant boundary! Automated Punch Out for Token #${tokenNo}`);
+      console.log(`👋 Exited 700m Keltron Kannur Plant boundary! Automated Punch Out for Token #${tokenNo}`);
       await axios.post(`${apiUrl}/attendance/punch-out`, {
         tokenNo,
         latitude: KELTRON_KANNUR_GEOFENCE.latitude,
         longitude: KELTRON_KANNUR_GEOFENCE.longitude,
         isGeofencedAutoPunch: true,
-        locationName: 'Keltron Kannur Plant (Exited 100m Geofence)'
+        locationName: 'Keltron Kannur Plant (Exited 700m Geofence)'
       }, { timeout: 8000 });
     }
   } catch (err) {
@@ -71,7 +71,7 @@ export const setupGeofenceTracking = async () => {
       await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, [KELTRON_KANNUR_GEOFENCE]);
       return {
         success: true,
-        message: '📍 Keltron Kannur Plant 100m Geofence Auto-Punch Active (Lat: 11.9838°N, Lng: 75.3742°E, Radius: 100m)'
+        message: '📍 Keltron Kannur Plant 700m Geofence Auto-Punch Active (Lat: 11.9838°N, Lng: 75.3742°E, Radius: 700m)'
       };
     }
 

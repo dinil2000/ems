@@ -7,7 +7,7 @@ const KELTRON_KANNUR_COORDS = {
   latitude: 11.983878,
   longitude: 75.374253,
   name: 'Keltron Component Complex Ltd (Dharmasala, Kalliassery)',
-  radiusMeters: 100 // Exact 100-meter company perimeter as requested
+  radiusMeters: 700 // Updated to 700-meter company perimeter as requested
 };
 
 // Calculate Haversine distance in meters
@@ -34,11 +34,11 @@ const PunchWidget = ({ onPunchUpdate }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Automated Geofencing Auto-Punch Settings
+  // Automated Geofencing Auto-Punch Settings (700 Meters)
   const [autoPunchEnabled, setAutoPunchEnabled] = useState(true);
   const [userCoords, setUserCoords] = useState(null);
   const [distanceToKeltron, setDistanceToKeltron] = useState(null);
-  const [geoStatus, setGeoStatus] = useState('Acquiring live GPS geofence...');
+  const [geoStatus, setGeoStatus] = useState('Acquiring live GPS geofence (700m radius)...');
   const [autoPunchLog, setAutoPunchLog] = useState('');
 
   // Google Maps Timeline Importer Modal State
@@ -69,11 +69,13 @@ const PunchWidget = ({ onPunchUpdate }) => {
 
       if (attRes.data && attRes.data.length > 0) {
         const latest = attRes.data[0];
-        if (latest.status === 'In Progress' || (!latest.punchOut && latest.punchIn)) {
+        if (latest.status === 'In Progress' || latest.status === 'Pending Late Approval' || (!latest.punchOut && latest.punchIn)) {
           setActivePunch(latest);
         } else {
           setActivePunch(null);
         }
+      } else {
+        setActivePunch(null);
       }
     } catch (err) {
       console.error('Error fetching attendance status:', err);
@@ -84,7 +86,7 @@ const PunchWidget = ({ onPunchUpdate }) => {
     if (tokenNo) fetchAttendanceStatus();
   }, [tokenNo]);
 
-  // Automated Geofencing HTML5 Live Location Watcher
+  // Automated Geofencing HTML5 Live Location Watcher (700m Radius)
   useEffect(() => {
     if (!navigator.geolocation) {
       setGeoStatus('GPS Not Supported on this browser');
@@ -100,35 +102,35 @@ const PunchWidget = ({ onPunchUpdate }) => {
         const dist = calculateDistanceInMeters(lat, lng, KELTRON_KANNUR_COORDS.latitude, KELTRON_KANNUR_COORDS.longitude);
         setDistanceToKeltron(dist);
 
-        const isInside100m = dist <= KELTRON_KANNUR_COORDS.radiusMeters;
+        const isInside700m = dist <= KELTRON_KANNUR_COORDS.radiusMeters;
 
-        if (isInside100m) {
-          setGeoStatus(`📍 Inside 100m Perimeter (${dist}m from Keltron Plant)`);
+        if (isInside700m) {
+          setGeoStatus(`📍 Inside 700m Perimeter (${dist}m from Keltron Plant)`);
         } else {
-          setGeoStatus(`📍 ${dist}m from Plant (100m Geofence Active)`);
+          setGeoStatus(`📍 ${dist}m from Plant (700m Geofence Active)`);
         }
 
-        // Automatic Punch Trigger
+        // Automatic Punch Trigger for 700m Perimeter
         if (autoPunchEnabled && empStatus !== 'Pending Approval') {
-          // ENTER 100m perimeter -> Automatic Punch In
-          if (isInside100m && prevInsideRef.current === false && !activePunch) {
-            console.log('⚡ Entered 100m factory zone! Auto-punching in...');
-            setAutoPunchLog(`⚡ Auto-Punched In! Entered 100m boundary (${dist}m)`);
+          // ENTER 700m perimeter -> Automatic Punch In
+          if (isInside700m && prevInsideRef.current === false && !activePunch) {
+            console.log('⚡ Entered 700m factory zone! Auto-punching in...');
+            setAutoPunchLog(`⚡ Auto-Punched In! Entered 700m boundary (${dist}m)`);
             handlePunchIn(lat, lng, true);
           }
-          // EXIT 100m perimeter -> Automatic Punch Out
-          else if (!isInside100m && prevInsideRef.current === true && activePunch) {
-            console.log('⚡ Exited 100m factory zone! Auto-punching out...');
-            setAutoPunchLog(`⚡ Auto-Punched Out! Left 100m boundary (${dist}m)`);
+          // EXIT 700m perimeter -> Automatic Punch Out
+          else if (!isInside700m && prevInsideRef.current === true && activePunch) {
+            console.log('⚡ Exited 700m factory zone! Auto-punching out...');
+            setAutoPunchLog(`⚡ Auto-Punched Out! Left 700m boundary (${dist}m)`);
             handlePunchOut(lat, lng, true);
           }
         }
 
-        prevInsideRef.current = isInside100m;
+        prevInsideRef.current = isInside700m;
       },
       (err) => {
         console.warn('Geolocation Watch Error:', err.message);
-        setGeoStatus('📍 GPS Geofence Active (Target 11.9838°N, 75.3742°E)');
+        setGeoStatus('📍 GPS Geofence Active (Target 11.9838°N, 75.3742°E, Radius: 700m)');
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
     );
@@ -157,11 +159,12 @@ const PunchWidget = ({ onPunchUpdate }) => {
         longitude: lng,
         isGeofencedAutoPunch: isAuto || isInsideGeofence,
         locationName: isInsideGeofence
-          ? 'Keltron Kannur Plant (Inside 100m Geofence)'
+          ? 'Keltron Kannur Plant (Inside 700m Geofence)'
           : `GPS Location (${dist}m from plant)`
       });
       setActivePunch(res.data.attendance);
-      setMessage(`✅ ${isAuto ? '⚡ AUTOMATIC GEOFENCE PUNCH IN:' : 'Punched In Successfully:'} ${res.data.message}`);
+      setMessage(`✅ ${isAuto ? '⚡ AUTOMATIC 700M GEOFENCE PUNCH IN:' : 'Punched In Successfully:'} ${res.data.message}`);
+      await fetchAttendanceStatus();
       if (onPunchUpdate) onPunchUpdate();
     } catch (err) {
       setMessage(`❌ ${err.response?.data?.message || 'Punch in failed'}`);
@@ -186,11 +189,12 @@ const PunchWidget = ({ onPunchUpdate }) => {
         longitude: lng,
         isGeofencedAutoPunch: isAuto || isInsideGeofence,
         locationName: isInsideGeofence
-          ? 'Keltron Kannur Plant (Inside 100m Geofence)'
+          ? 'Keltron Kannur Plant (Inside 700m Geofence)'
           : `GPS Location (${dist}m from plant)`
       });
       setActivePunch(null);
-      setMessage(`✅ ${isAuto ? '⚡ AUTOMATIC GEOFENCE PUNCH OUT:' : 'Punched Out Successfully:'} ${res.data.message}`);
+      setMessage(`✅ ${isAuto ? '⚡ AUTOMATIC 700M GEOFENCE PUNCH OUT:' : 'Punched Out Successfully:'} ${res.data.message}`);
+      await fetchAttendanceStatus();
       if (onPunchUpdate) onPunchUpdate();
     } catch (err) {
       setMessage(`❌ ${err.response?.data?.message || 'Punch out failed'}`);
@@ -210,7 +214,7 @@ const PunchWidget = ({ onPunchUpdate }) => {
           const parsed = JSON.parse(timelineJsonText);
           timelineVisits = Array.isArray(parsed) ? parsed : (parsed.timelineObjects || parsed.rawSignals || [parsed]);
         } catch (e) {
-          setTimelineMsg('❌ Invalid JSON format in Timeline box. Please paste valid Google Takeout JSON or use 1-click Auto Backfill.');
+          setTimelineMsg('❌ Invalid JSON format. Please paste valid Google Takeout JSON or use 1-click Auto Backfill.');
           setSyncingTimeline(false);
           return;
         }
@@ -233,7 +237,7 @@ const PunchWidget = ({ onPunchUpdate }) => {
   };
 
   const isPendingApproval = empStatus === 'Pending Approval';
-  const isInside100m = distanceToKeltron !== null && distanceToKeltron <= KELTRON_KANNUR_COORDS.radiusMeters;
+  const isInside700m = distanceToKeltron !== null && distanceToKeltron <= KELTRON_KANNUR_COORDS.radiusMeters;
 
   return (
     <div className="card card-hover" style={{ background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)' }}>
@@ -241,8 +245,8 @@ const PunchWidget = ({ onPunchUpdate }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
           <Clock style={{ color: '#06b6d4' }} size={22} />
           <div>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>MPP Automated Punching Terminal</h3>
-            <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 600 }}>Token #{tokenNo} • 100m Geofence Active</span>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>MPP 700M Automated Punching Terminal</h3>
+            <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 600 }}>Token #{tokenNo} • 700m Geofence Active</span>
           </div>
         </div>
 
@@ -251,18 +255,18 @@ const PunchWidget = ({ onPunchUpdate }) => {
         </span>
       </div>
 
-      {/* Geofence GPS Status Banner with Automated 100m Radius */}
+      {/* Geofence GPS Status Banner with Automated 700m Radius */}
       <div style={{
         backgroundColor: '#090d16',
         padding: '0.6rem 0.8rem',
         borderRadius: '8px',
         fontSize: '0.75rem',
         marginBottom: '0.85rem',
-        border: isInside100m ? '1px solid #10b981' : '1px solid #0284c7'
+        border: isInside700m ? '1px solid #10b981' : '1px solid #0284c7'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: isInside100m ? '#34d399' : '#38bdf8' }}>
-            <Navigation size={15} style={{ color: isInside100m ? '#10b981' : '#38bdf8' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: isInside700m ? '#34d399' : '#38bdf8' }}>
+            <Navigation size={15} style={{ color: isInside700m ? '#10b981' : '#38bdf8' }} />
             <span><strong>{geoStatus}</strong></span>
           </div>
 
@@ -284,7 +288,7 @@ const PunchWidget = ({ onPunchUpdate }) => {
         </div>
 
         <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.3rem' }}>
-          📍 Target: <strong>Keltron Kannur Plant (11.9838°N, 75.3742°E)</strong> • Auto-punches on enter/exit within <strong>100 meters</strong>
+          📍 Target: <strong>Keltron Kannur Plant (11.9838°N, 75.3742°E)</strong> • Auto-punches on enter/exit within <strong>700 meters</strong>
         </div>
 
         {autoPunchLog && (
@@ -344,7 +348,7 @@ const PunchWidget = ({ onPunchUpdate }) => {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem' }}>
             <span>Geofence Status:</span>
-            <span style={{ color: '#34d399', fontWeight: 600 }}>📍 100m Plant Perimeter Verified</span>
+            <span style={{ color: '#34d399', fontWeight: 600 }}>📍 700m Plant Perimeter Verified</span>
           </div>
         </div>
       )}

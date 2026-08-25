@@ -58,27 +58,32 @@ router.post('/punch-in', async (req, res) => {
     const { tokenNo, punchInTimeOverride, latitude, longitude, isGeofencedAutoPunch, locationName } = req.body;
     if (!tokenNo) return res.status(400).json({ message: 'Punching Token number is required.' });
 
-    const employee = await Employee.findOne({ tokenNo });
-    if (!employee) return res.status(404).json({ message: 'Employee profile not found for this token number.' });
+    const trimmedToken = String(tokenNo).trim();
+    let employee = await Employee.findOne({ tokenNo: trimmedToken });
+    if (!employee) {
+      employee = await Employee.findOne({ tokenNo: { $regex: new RegExp(`^${trimmedToken}$`, 'i') } });
+    }
+    if (!employee) return res.status(404).json({ message: `Employee profile not found for Token #${trimmedToken}.` });
 
     if (employee.status === 'Inactive') {
-      return res.status(403).json({ message: `Account Inactive! Punching Token #${tokenNo} is deactivated.` });
+      return res.status(403).json({ message: `Account Inactive! Punching Token #${trimmedToken} is deactivated.` });
     }
 
     const now = punchInTimeOverride ? new Date(punchInTimeOverride) : new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
+    // Check if there is an active punch-in without punch-out for today
     let record = await Attendance.findOne({
       employeeId: employee._id,
       date: { $gte: todayStart, $lte: todayEnd }
-    });
+    }).sort({ createdAt: -1 });
 
     if (record && record.punchIn && !record.punchOut) {
       return res.status(400).json({ message: 'Already punched in for today.', attendance: record });
     }
 
-    const { shiftStartDate, graceCutoffDate, shiftLabel } = await getAssignedShiftStart(tokenNo, now);
+    const { shiftStartDate, graceCutoffDate, shiftLabel } = await getAssignedShiftStart(trimmedToken, now);
 
     const isLate = now > graceCutoffDate;
     let lateMinutes = 0;
@@ -96,9 +101,9 @@ router.post('/punch-in', async (req, res) => {
       date: now,
       punchIn: now,
       punchInLocation: {
-        latitude: latitude || 11.984011,
-        longitude: longitude || 75.375067,
-        locationName: locationName || 'Keltron Kannur Campus (Mangattuparamba)',
+        latitude: latitude || 11.983878,
+        longitude: longitude || 75.374253,
+        locationName: locationName || 'Keltron Kannur Plant (Inside 700m Geofence)',
         isGeofencedAutoPunch: !!isGeofencedAutoPunch
       },
       isSunday,
@@ -109,11 +114,11 @@ router.post('/punch-in', async (req, res) => {
       status,
     });
 
-    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated Geofenced GPS Auto-Punch)' : '';
+    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated 700m Geofenced GPS Auto-Punch)' : '';
 
     if (isLate) {
       return res.status(201).json({
-        message: `Punched In at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice} (LATE by ${lateMinutes} mins - Exceeds 10-min grace period). Recorded! Pending Late Approval.`,
+        message: `Punched In at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice} (LATE by ${lateMinutes} mins). Recorded! Pending Late Approval.`,
         attendance: record,
         isLate: true
       });
@@ -135,18 +140,21 @@ router.post('/punch-out', async (req, res) => {
     const { tokenNo, punchOutTimeOverride, latitude, longitude, isGeofencedAutoPunch, locationName } = req.body;
     if (!tokenNo) return res.status(400).json({ message: 'Punching Token number is required.' });
 
-    const employee = await Employee.findOne({ tokenNo });
-    if (!employee) return res.status(404).json({ message: 'Employee profile not found.' });
+    const trimmedToken = String(tokenNo).trim();
+    let employee = await Employee.findOne({ tokenNo: trimmedToken });
+    if (!employee) {
+      employee = await Employee.findOne({ tokenNo: { $regex: new RegExp(`^${trimmedToken}$`, 'i') } });
+    }
+    if (!employee) return res.status(404).json({ message: `Employee profile not found for Token #${trimmedToken}.` });
 
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
+    // Find the latest active punch-in that has not been punched out yet
     let record = await Attendance.findOne({
       employeeId: employee._id,
-      date: { $gte: todayStart, $lte: todayEnd },
-      punchOut: { $exists: false }
-    });
+      punchIn: { $exists: true },
+      $or: [{ punchOut: { $exists: false } }, { punchOut: null }]
+    }).sort({ createdAt: -1 });
 
     if (!record) {
       record = await Attendance.findOne({
@@ -173,9 +181,9 @@ router.post('/punch-out', async (req, res) => {
 
     record.punchOut = punchOutTime;
     record.punchOutLocation = {
-      latitude: latitude || 11.984011,
-      longitude: longitude || 75.375067,
-      locationName: locationName || 'Keltron Kannur Campus (Mangattuparamba)',
+      latitude: latitude || 11.983878,
+      longitude: longitude || 75.374253,
+      locationName: locationName || 'Keltron Kannur Plant (Inside 700m Geofence)',
       isGeofencedAutoPunch: !!isGeofencedAutoPunch
     };
     record.totalHours = totalHrs;
@@ -183,7 +191,7 @@ router.post('/punch-out', async (req, res) => {
     record.status = 'Present';
     await record.save();
 
-    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated Geofenced GPS Exit Punch)' : '';
+    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated 700m Geofenced GPS Exit Punch)' : '';
 
     res.json({
       message: `Punched Out successfully at ${punchOutTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice}! Worked: ${hrsDisplay} hrs ${minsDisplay} mins (${totalHrs} hrs total).`,
@@ -379,6 +387,41 @@ router.post('/import-timeline', async (req, res) => {
       count: importedRecords.length,
       records: importedRecords
     });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get attendance for specific employee (sorted by latest createdAt & date)
+router.get('/employee/:tokenNo', async (req, res) => {
+  try {
+    const tokenNo = String(req.params.tokenNo).trim();
+    const records = await Attendance.find({
+      $or: [
+        { tokenNo: tokenNo },
+        { tokenNo: { $regex: new RegExp(`^${tokenNo}$`, 'i') } }
+      ]
+    })
+      .sort({ createdAt: -1, date: -1 })
+      .limit(60);
+    res.json(records);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Supervisor List Today Attendance
+router.get('/today', async (req, res) => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+    const list = await Attendance.find({
+      date: { $gte: todayStart, $lte: todayEnd }
+    }).sort({ createdAt: -1 }).populate('employeeId');
+
+    res.json(list);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

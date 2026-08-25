@@ -88,7 +88,7 @@ const AttendanceHistoryPage = () => {
               Monthly Attendance & Punching History Log
             </h1>
             <p style={{ fontSize: '0.82rem', color: '#94a3b8', margin: '0.2rem 0 0 0' }}>
-              Keltron Component Complex Ltd • 100m Geofence GPS Audit & Google Maps Timeline Records
+              Keltron Component Complex Ltd • 700m Geofence GPS Audit & Google Maps Timeline Records
             </p>
           </div>
         </div>
@@ -177,7 +177,7 @@ const AttendanceHistoryPage = () => {
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', color: '#34d399' }}>
                           <MapPin size={13} style={{ color: '#10b981' }} />
-                          <span>Keltron Kannur Plant (100m Verified)</span>
+                          <span>Keltron Kannur Plant (700m Verified)</span>
                         </div>
                       </td>
                     </tr>
