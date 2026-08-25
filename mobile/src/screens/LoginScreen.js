@@ -10,6 +10,7 @@ import {
   SafeAreaView,
   ScrollView,
   Modal,
+  Image,
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -195,12 +196,13 @@ export default function LoginScreen({ onLoginSuccess }) {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header with Keltron Emblem Logo */}
+        {/* Header with MPP Logo */}
         <View style={styles.headerContainer}>
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoText}>KELTRON</Text>
-            <Text style={styles.logoSubText}>കെൽട്രോൺ</Text>
-          </View>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={{ width: 80, height: 80, borderRadius: 16, marginBottom: 10 }}
+            resizeMode="contain"
+          />
           <Text style={styles.title}>KELTRON MPP EMS</Text>
           <Text style={styles.subtitle}>Production Centre - I • Kannur Campus</Text>
         </View>

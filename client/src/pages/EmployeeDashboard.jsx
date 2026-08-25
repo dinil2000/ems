@@ -17,13 +17,13 @@ const EmployeeDashboard = ({ setActiveTab }) => {
     setLoading(true);
     try {
       const [attRes, payRes, shiftRes] = await Promise.all([
-        axios.get(`${API_BASE}/attendance/employee/${tokenNo}`),
-        axios.get(`${API_BASE}/payroll/employee/${tokenNo}`),
+        axios.get(`${API_BASE}/attendance/employee/${tokenNo}`).catch(() => ({ data: [] })),
+        axios.get(`${API_BASE}/payroll/employee/${tokenNo}`).catch(() => ({ data: [] })),
         axios.get(`${API_BASE}/shifts/latest`).catch(() => ({ data: null }))
       ]);
 
-      setAttendance(attRes.data);
-      setPayroll(payRes.data);
+      setAttendance(Array.isArray(attRes.data) ? attRes.data : []);
+      setPayroll(Array.isArray(payRes.data) ? payRes.data : []);
 
       if (shiftRes.data && shiftRes.data.shifts) {
         // Find employee's assigned shift in current roster
@@ -149,7 +149,7 @@ const EmployeeDashboard = ({ setActiveTab }) => {
                       <th>Date</th>
                       <th>Punch In</th>
                       <th>Punch Out</th>
-                      <th>Total Hours</th>
+                      <th>Working Hours</th>
                       <th>Overtime (Double Rate)</th>
                       <th>Status</th>
                     </tr>
@@ -175,12 +175,12 @@ const EmployeeDashboard = ({ setActiveTab }) => {
                 </table>
               </div>
             ) : (
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>No attendance punch logs recorded yet today.</p>
+              <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>No attendance punch logs recorded yet. Punch in to start logging.</p>
             )}
           </div>
 
           <div className="card">
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '1rem' }}>My Salary Slips (25th to 25th Cycle)</h3>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '1rem' }}>My Salary Slips (26th to 25th Cycle)</h3>
             {payroll.length > 0 ? (
               <div className="table-container">
                 <table>

@@ -8,9 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
-  Modal,
-  SafeAreaView,
-  Alert,
+  Image,
 } from 'react-native';
 import axios from 'axios';
 import { getApiUrlList } from '../config/api';
@@ -20,12 +18,6 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchToken, setSearchToken] = useState(user?.employeeToken || '');
-
-  // Google Maps Timeline Modal State
-  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
-  const [timelineMonth, setTimelineMonth] = useState('2026-08');
-  const [timelineJson, setTimelineJson] = useState('');
-  const [syncingTimeline, setSyncingTimeline] = useState(false);
 
   const isSupervisorOrAdmin = user?.role === 'Supervisor' || user?.role === 'SiteAdmin';
 
@@ -60,49 +52,6 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
     setRefreshing(false);
   };
 
-  const handleSyncGoogleTimeline = async () => {
-    setSyncingTimeline(true);
-    try {
-      const targetToken = searchToken || user?.employeeToken || '8709';
-      let timelineVisits = null;
-      if (timelineJson.trim()) {
-        try {
-          const parsed = JSON.parse(timelineJson);
-          timelineVisits = Array.isArray(parsed) ? parsed : (parsed.timelineObjects || parsed.rawSignals || [parsed]);
-        } catch (e) {
-          Alert.alert('Invalid JSON', 'Please enter valid Google Takeout JSON format or use 1-click Auto Backfill.');
-          setSyncingTimeline(false);
-          return;
-        }
-      }
-
-      const urls = await getApiUrlList();
-      let res = null;
-      for (const url of urls) {
-        try {
-          res = await axios.post(`${url}/attendance/import-timeline`, {
-            tokenNo: targetToken,
-            timelineVisits,
-            autoBackfillMonth: timelineVisits ? null : timelineMonth,
-          }, { timeout: 10000 });
-          if (res) break;
-        } catch (e) {}
-      }
-
-      if (res) {
-        Alert.alert('Timeline Sync Successful!', res.data.message);
-        setIsTimelineOpen(false);
-        fetchHistory();
-      } else {
-        Alert.alert('Sync Error', 'Unable to sync with server.');
-      }
-    } catch (err) {
-      Alert.alert('Sync Failed', err.response?.data?.message || err.message);
-    } finally {
-      setSyncingTimeline(false);
-    }
-  };
-
   return (
     <View style={styles.container}>
       {/* Header Bar with Back Button */}
@@ -111,23 +60,25 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
           <Text style={styles.backBtnText}>◀ Back</Text>
         </TouchableOpacity>
 
-        {/* Official Keltron Brand Logo */}
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoText}>KELTRON</Text>
-        </View>
+        {/* MPP Brand Logo */}
+        <Image
+          source={require('../../assets/icon.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
 
         <Text style={styles.headerTitle}>Punching History Log</Text>
       </View>
 
       {/* Action & Search Bar */}
       <View style={styles.searchBar}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: isSupervisorOrAdmin ? 6 : 0 }}>
           <Text style={styles.searchLabel}>
             {isSupervisorOrAdmin ? 'Search Employee Token #:' : `Punch Logs for Token #${user.employeeToken}`}
           </Text>
-          <TouchableOpacity style={styles.timelineBtn} onPress={() => setIsTimelineOpen(true)}>
-            <Text style={styles.timelineBtnText}>📍 Sync Timeline</Text>
-          </TouchableOpacity>
+          <Text style={{ fontSize: 11, color: '#38bdf8', fontWeight: '700' }}>
+            {records.length} Entries
+          </Text>
         </View>
 
         {isSupervisorOrAdmin && (
@@ -156,6 +107,11 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
           <Text style={styles.bannerSubtitle}>
             Viewing Token #{searchToken || user.employeeToken} • {records.length} Recorded Entries • 700m Plant Boundary
           </Text>
+          <View style={styles.rulesBox}>
+            <Text style={styles.rulesText}>
+              ⏱ Working Hours = 7h 30m (30m lunch deducted from 8h shift) • OT starts after 8h 30m presence (30m grace) • Salary Cycle: 26th to 25th
+            </Text>
+          </View>
         </View>
 
         {loading ? (
@@ -200,9 +156,16 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
                 </View>
 
                 <View style={styles.row}>
-                  <Text style={styles.label}>Worked Duration:</Text>
+                  <Text style={styles.label}>Working Hours:</Text>
                   <Text style={[styles.value, { color: '#f8fafc', fontWeight: 'bold' }]}>
-                    {att.totalHours ? `${att.totalHours} hrs` : 'In Progress'} (OT: {att.overtimeHours || 0} hrs)
+                    {att.totalHours ? `${att.totalHours} hrs` : 'In Progress'}
+                  </Text>
+                </View>
+
+                <View style={styles.row}>
+                  <Text style={styles.label}>Overtime (OT):</Text>
+                  <Text style={[styles.value, { color: att.overtimeHours > 0 ? '#fbbf24' : '#94a3b8', fontWeight: 'bold' }]}>
+                    {att.overtimeHours > 0 ? `+${att.overtimeHours} hrs` : '0 hrs'}
                   </Text>
                 </View>
 
@@ -216,72 +179,6 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
           <Text style={styles.emptyText}>No attendance records found for Token #{searchToken || user?.employeeToken}.</Text>
         )}
       </ScrollView>
-
-      {/* Google Timeline Sync Modal */}
-      <Modal visible={isTimelineOpen} animationType="slide" transparent={false}>
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Sync Google Maps Timeline History</Text>
-            <TouchableOpacity onPress={() => setIsTimelineOpen(false)} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕ Close</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView contentContainerStyle={styles.modalContent}>
-            <View style={styles.timelineInfoBox}>
-              <Text style={styles.timelineInfoTitle}>How Google Maps Timeline Works:</Text>
-              <Text style={styles.timelineInfoText}>
-                Google Maps Timeline records arrival and departure times whenever you visit Keltron Component Complex Ltd (Dharmasala, Kalliassery).
-                Sync all working days for Token #{searchToken || user.employeeToken}.
-              </Text>
-            </View>
-
-            <View style={styles.syncCard}>
-              <Text style={styles.syncCardTitle}>⚡ 1-Click Month Timeline Auto-Sync:</Text>
-              <Text style={styles.inputHelp}>Sync all working days for selected month:</Text>
-              <TextInput
-                style={styles.input}
-                value={timelineMonth}
-                onChangeText={setTimelineMonth}
-                placeholder="2026-08 (YYYY-MM)"
-                placeholderTextColor="#64748b"
-              />
-
-              <TouchableOpacity
-                style={styles.syncBtn}
-                onPress={handleSyncGoogleTimeline}
-                disabled={syncingTimeline}
-              >
-                {syncingTimeline ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.syncBtnText}>⚡ Sync Month Timeline Punch Logs</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.syncCard}>
-              <Text style={styles.syncCardTitle}>Or Paste Google Takeout Timeline JSON:</Text>
-              <TextInput
-                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-                multiline
-                placeholder='Paste Google Takeout location history JSON or visit objects: [{"date":"2026-08-18","punchIn":"06:55:00","punchOut":"15:10:00"}]'
-                placeholderTextColor="#64748b"
-                value={timelineJson}
-                onChangeText={setTimelineJson}
-              />
-
-              <TouchableOpacity
-                style={[styles.syncBtn, { backgroundColor: '#0284c7' }]}
-                onPress={handleSyncGoogleTimeline}
-                disabled={syncingTimeline}
-              >
-                <Text style={styles.syncBtnText}>Import Timeline JSON Records</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
     </View>
   );
 }
@@ -313,17 +210,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  logoBadge: {
-    backgroundColor: '#0284c7',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
+  logoImage: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
     marginRight: 8,
-  },
-  logoText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '900',
   },
   headerTitle: {
     fontSize: 15,
@@ -340,17 +231,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#94a3b8',
-  },
-  timelineBtn: {
-    backgroundColor: '#0284c7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  timelineBtnText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
   },
   searchInput: {
     flex: 1,
@@ -396,6 +276,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94a3b8',
     marginTop: 2,
+  },
+  rulesBox: {
+    backgroundColor: '#090d16',
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 8,
+  },
+  rulesText: {
+    fontSize: 10,
+    color: '#cbd5e1',
+    lineHeight: 14,
   },
   logCard: {
     backgroundColor: '#1e293b',
@@ -488,97 +379,5 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     textAlign: 'center',
     marginTop: 30,
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-    backgroundColor: '#1e293b',
-  },
-  modalTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#f8fafc',
-  },
-  closeBtn: {
-    backgroundColor: '#334155',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  closeBtnText: {
-    color: '#f87171',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  modalContent: {
-    padding: 16,
-  },
-  timelineInfoBox: {
-    backgroundColor: '#090d16',
-    borderWidth: 1,
-    borderColor: '#0284c7',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 14,
-  },
-  timelineInfoTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#38bdf8',
-    marginBottom: 4,
-  },
-  timelineInfoText: {
-    fontSize: 11,
-    color: '#cbd5e1',
-    lineHeight: 16,
-  },
-  syncCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#334155',
-    marginBottom: 14,
-  },
-  syncCardTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 6,
-  },
-  inputHelp: {
-    fontSize: 11,
-    color: '#94a3b8',
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: '#0f172a',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
-    color: '#f8fafc',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  syncBtn: {
-    backgroundColor: '#10b981',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  syncBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
   },
 });

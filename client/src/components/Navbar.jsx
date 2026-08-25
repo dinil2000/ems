@@ -19,22 +19,26 @@ const Navbar = ({ activeTab, setActiveTab }) => {
       top: 0,
       zIndex: 100
     }}>
-      {/* Official Keltron Brand Header */}
+      {/* Official Keltron & MPP Brand Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+        <img
+          src="/logo.png"
+          alt="MPP Logo"
+          style={{ width: '42px', height: '42px', borderRadius: '8px', objectFit: 'contain' }}
+        />
         <div style={{
           backgroundColor: '#0284c7',
           color: '#fff',
-          padding: '0.4rem 0.8rem',
-          borderRadius: '8px',
+          padding: '0.3rem 0.6rem',
+          borderRadius: '6px',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justify: 'center',
-          boxShadow: '0 0 12px rgba(2, 132, 199, 0.4)',
+          justifyContent: 'center',
           border: '1px solid #38bdf8'
         }}>
-          <span style={{ fontSize: '1rem', fontWeight: 900, letterSpacing: '1px', fontFamily: 'sans-serif' }}>KELTRON</span>
-          <span style={{ fontSize: '0.55rem', fontWeight: 700, color: '#e0f2fe' }}>കെൽട്രോൺ</span>
+          <span style={{ fontSize: '0.85rem', fontWeight: 900, letterSpacing: '0.5px' }}>KELTRON</span>
+          <span style={{ fontSize: '0.5rem', fontWeight: 700, color: '#e0f2fe' }}>കെൽട്രോൺ</span>
         </div>
         <div>
           <h1 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', margin: 0, letterSpacing: '-0.02em' }}>
@@ -83,7 +87,7 @@ const Navbar = ({ activeTab, setActiveTab }) => {
                 className={`btn ${activeTab === 'payroll' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setActiveTab('payroll')}
               >
-                Payroll (25th-25th)
+                Payroll (26th-25th)
               </button>
               <button
                 className={`btn ${activeTab === 'maintenance' ? 'btn-primary' : 'btn-secondary'}`}

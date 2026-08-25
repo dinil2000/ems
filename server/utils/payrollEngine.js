@@ -6,12 +6,12 @@ const calculatePayrollForEmployee = async (employeeId, year, month) => {
   const employee = await Employee.findById(employeeId);
   if (!employee) throw new Error('Employee not found');
 
-  // Determine billing cycle: 25th prev month to 25th current month
+  // Determine billing cycle: 26th prev month to 25th current month
   // Month is 1-indexed (e.g. 8 for August)
   const currentYear = parseInt(year);
   const currentMonth = parseInt(month); // e.g., 8
 
-  const billingStart = new Date(currentYear, currentMonth - 2, 25, 0, 0, 0); // 25th of prev month
+  const billingStart = new Date(currentYear, currentMonth - 2, 26, 0, 0, 0); // 26th of prev month
   const billingEnd = new Date(currentYear, currentMonth - 1, 25, 23, 59, 59); // 25th of current month
   
   // Last day of current month for payout
@@ -38,11 +38,8 @@ const calculatePayrollForEmployee = async (employeeId, year, month) => {
     if (record.status === 'Present') {
       totalDaysPresent += 1;
 
-      // Calculate Overtime (hours worked beyond 7.5 hours per day)
-      const hoursWorked = record.totalHours || 7.5;
-      if (hoursWorked > standardHoursPerDay) {
-        totalOvertimeHours += (hoursWorked - standardHoursPerDay);
-      }
+      // Use the overtimeHours field directly (already calculated correctly at punch-out)
+      // totalHours = working hours (capped at 7.5), overtimeHours = extra beyond shift+grace
       totalOvertimeHours += (record.overtimeHours || 0);
 
       // Sunday Check

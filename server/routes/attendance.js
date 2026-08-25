@@ -37,7 +37,7 @@ const getAssignedShiftStart = async (tokenNo, now) => {
     }
 
     const shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, startMin, 0);
-    // 10-minute grace period threshold
+    // 10-minute grace period threshold for late check
     const graceCutoffDate = new Date(shiftStartDate.getTime() + 10 * 60 * 1000);
 
     return {
@@ -51,6 +51,23 @@ const getAssignedShiftStart = async (tokenNo, now) => {
     return { shiftStartDate, graceCutoffDate, shiftLabel: '08:30' };
   }
 };
+
+/*
+ * WORKING HOURS & OVERTIME CALCULATION RULES:
+ * ============================================
+ * - Shift duration = 8 hours (including 30 min lunch break)
+ * - Recorded working hours = 7 hrs 30 min (7.5 hrs) — always for a full day
+ * - Lunch break = 30 min deducted from total presence
+ * - 30-minute grace period AFTER shift ends (e.g. 3:00 PM to 3:30 PM for 1st shift)
+ *   → If employee leaves within this 30 min, NO overtime is counted
+ * - Overtime starts ONLY when total raw hours > 8.5 (shift + grace)
+ * - OT formula: (totalRawHours - 0.5 lunch) - 7.5 working = totalRawHours - 8.0
+ *
+ * Example: Punch In 7:00 AM, Punch Out 6:45 PM
+ *   totalRaw = 11.75 hrs → working = 7.5 hrs, OT = 11.75 - 8.0 = 3.75 hrs (3h 45m)
+ *
+ * Salary billing cycle: 26th of previous month to 25th of current month
+ */
 
 // Punch In (Supports Automated Geofenced GPS Entry Punch)
 router.post('/punch-in', async (req, res) => {
@@ -135,6 +152,8 @@ router.post('/punch-in', async (req, res) => {
 });
 
 // Punch Out (Supports Automated Geofenced GPS Exit Punch)
+// Working Hours: 7.5 hrs (30 min lunch deducted from 8 hr shift)
+// OT: only if raw presence > 8.5 hrs (30 min post-shift grace), OT = rawHours - 8.0
 router.post('/punch-out', async (req, res) => {
   try {
     const { tokenNo, punchOutTimeOverride, latitude, longitude, isGeofencedAutoPunch, locationName } = req.body;
@@ -171,13 +190,46 @@ router.post('/punch-out', async (req, res) => {
     const punchInTime = new Date(record.punchIn);
 
     const diffMs = Math.max(0, punchOutTime - punchInTime);
-    const totalHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+    const totalRawHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
 
-    const totalMinutes = Math.floor(diffMs / (1000 * 60));
-    const hrsDisplay = Math.floor(totalMinutes / 60);
-    const minsDisplay = totalMinutes % 60;
+    // ── Working Hours Calculation ──
+    // Shift = 8 hrs, Lunch = 30 min deducted, Standard working = 7.5 hrs
+    const LUNCH_DEDUCTION = 0.5;        // 30 minutes lunch break
+    const STANDARD_WORKING = 7.5;       // 7 hrs 30 min
+    const SHIFT_DURATION = 8.0;         // 8 hrs total shift (including lunch)
+    const POST_SHIFT_GRACE = 0.5;       // 30 min grace after shift ends
+    const OT_THRESHOLD = SHIFT_DURATION + POST_SHIFT_GRACE; // 8.5 hrs
 
-    const overtimeHrs = totalHrs > 7.5 ? parseFloat((totalHrs - 7.5).toFixed(2)) : 0;
+    let workingHours;
+    let overtimeHrs;
+
+    if (totalRawHrs >= SHIFT_DURATION) {
+      // Full shift completed → working = 7.5 hrs (always)
+      workingHours = STANDARD_WORKING;
+    } else if (totalRawHrs > LUNCH_DEDUCTION) {
+      // Partial day → deduct lunch from raw hours
+      workingHours = parseFloat((totalRawHrs - LUNCH_DEDUCTION).toFixed(2));
+    } else {
+      // Very short presence (< 30 min)
+      workingHours = parseFloat(totalRawHrs.toFixed(2));
+    }
+
+    if (totalRawHrs > OT_THRESHOLD) {
+      // OT = (raw - lunch) - working = raw - 8.0
+      // The 30 min grace (3:00 - 3:30 for 1st shift) is NOT counted as OT
+      overtimeHrs = parseFloat((totalRawHrs - SHIFT_DURATION).toFixed(2));
+    } else {
+      // Within shift + 30 min grace → no overtime
+      overtimeHrs = 0;
+    }
+
+    // Display formatting
+    const workingMins = Math.round(workingHours * 60);
+    const wHrs = Math.floor(workingMins / 60);
+    const wMins = workingMins % 60;
+    const otMins = Math.round(overtimeHrs * 60);
+    const oHrs = Math.floor(otMins / 60);
+    const oMins = otMins % 60;
 
     record.punchOut = punchOutTime;
     record.punchOutLocation = {
@@ -186,7 +238,7 @@ router.post('/punch-out', async (req, res) => {
       locationName: locationName || 'Keltron Kannur Plant (Inside 700m Geofence)',
       isGeofencedAutoPunch: !!isGeofencedAutoPunch
     };
-    record.totalHours = totalHrs;
+    record.totalHours = workingHours;
     record.overtimeHours = overtimeHrs;
     record.status = 'Present';
     await record.save();
@@ -194,7 +246,7 @@ router.post('/punch-out', async (req, res) => {
     const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated 700m Geofenced GPS Exit Punch)' : '';
 
     res.json({
-      message: `Punched Out successfully at ${punchOutTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice}! Worked: ${hrsDisplay} hrs ${minsDisplay} mins (${totalHrs} hrs total).`,
+      message: `Punched Out successfully at ${punchOutTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice}! Worked: ${wHrs}h ${wMins}m | OT: ${oHrs}h ${oMins}m`,
       attendance: record
     });
   } catch (error) {
@@ -243,150 +295,6 @@ router.get('/pending-late', async (req, res) => {
     }).sort({ date: -1 }).populate('employeeId');
 
     res.json(pendingLate);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Import Google Maps Timeline Entry / Exit Records for Historical Attendance Punching
-router.post('/import-timeline', async (req, res) => {
-  try {
-    const { tokenNo, timelineVisits, autoBackfillMonth } = req.body;
-    if (!tokenNo) return res.status(400).json({ message: 'Token number is required.' });
-
-    const employee = await Employee.findOne({ tokenNo });
-    if (!employee) return res.status(404).json({ message: 'Employee profile not found.' });
-
-    let importedRecords = [];
-
-    // Mode A: Import custom/Google Takeout Timeline Visits Array
-    if (timelineVisits && Array.isArray(timelineVisits) && timelineVisits.length > 0) {
-      for (const item of timelineVisits) {
-        let inTime, outTime, visitDate;
-
-        // Support Google Takeout placeVisit schema
-        if (item.placeVisit) {
-          inTime = new Date(item.placeVisit.duration?.startTimestamp || item.placeVisit.duration?.startTimestampMs);
-          outTime = new Date(item.placeVisit.duration?.endTimestamp || item.placeVisit.duration?.endTimestampMs);
-          visitDate = new Date(inTime.getFullYear(), inTime.getMonth(), inTime.getDate(), 12, 0, 0);
-        } else {
-          // Simplified or standard visit format
-          inTime = new Date(item.punchIn || item.startTime || `${item.date}T${item.inTime || '08:30:00'}`);
-          outTime = item.punchOut || item.endTime ? new Date(item.punchOut || item.endTime || `${item.date}T${item.outTime || '16:30:00'}`) : new Date(inTime.getTime() + 8 * 3600000);
-          visitDate = new Date(inTime.getFullYear(), inTime.getMonth(), inTime.getDate(), 12, 0, 0);
-        }
-
-        if (isNaN(inTime.getTime())) continue;
-
-        const dayStart = new Date(visitDate.getFullYear(), visitDate.getMonth(), visitDate.getDate(), 0, 0, 0);
-        const dayEnd = new Date(visitDate.getFullYear(), visitDate.getMonth(), visitDate.getDate(), 23, 59, 59);
-
-        const diffMs = Math.max(0, outTime - inTime);
-        const totalHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
-        const overtimeHrs = totalHrs > 7.5 ? parseFloat((totalHrs - 7.5).toFixed(2)) : 0;
-
-        // Determine Shift Label from arrival hour
-        const inHour = inTime.getHours();
-        let shiftLabel = '08:30';
-        if (inHour >= 6 && inHour <= 9) shiftLabel = inHour <= 7 ? '07:00' : '08:30';
-        else if (inHour >= 14 && inHour <= 16) shiftLabel = '15:00';
-        else if (inHour >= 22 || inHour <= 1) shiftLabel = '23:00';
-
-        const record = await Attendance.findOneAndUpdate(
-          { employeeId: employee._id, date: { $gte: dayStart, $lte: dayEnd } },
-          {
-            employeeId: employee._id,
-            tokenNo: employee.tokenNo,
-            date: visitDate,
-            punchIn: inTime,
-            punchOut: outTime,
-            totalHours: totalHrs,
-            overtimeHours: overtimeHrs,
-            status: 'Present',
-            shiftStartTime: shiftLabel,
-            supervisorApproved: true,
-            isSunday: visitDate.getDay() === 0,
-            isLate: false,
-            punchInLocation: {
-              latitude: 11.983878,
-              longitude: 75.374253,
-              locationName: 'Keltron Kannur Plant (Google Timeline 100m Geofence)',
-              isGeofencedAutoPunch: true
-            },
-            punchOutLocation: {
-              latitude: 11.983878,
-              longitude: 75.374253,
-              locationName: 'Keltron Kannur Plant (Google Timeline 100m Geofence)',
-              isGeofencedAutoPunch: true
-            }
-          },
-          { upsert: true, new: true }
-        );
-        importedRecords.push(record);
-      }
-    }
-
-    // Mode B: Quick Auto-Sync Month from Google Timeline Presence
-    if (autoBackfillMonth) {
-      const [yearStr, monthStr] = autoBackfillMonth.split('-');
-      const year = parseInt(yearStr) || new Date().getFullYear();
-      const month = parseInt(monthStr) ? parseInt(monthStr) - 1 : new Date().getMonth();
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-      for (let day = 1; day <= daysInMonth; day++) {
-        const currentDate = new Date(year, month, day, 12, 0, 0);
-        // Skip Sundays if not working
-        if (currentDate.getDay() === 0) continue;
-
-        // Shift 1 arrival 06:55 AM, departure 03:05 PM
-        const punchIn = new Date(year, month, day, 6, 55, 0);
-        const punchOut = new Date(year, month, day, 15, 10, 0);
-        const diffMs = punchOut - punchIn;
-        const totalHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
-        const overtimeHrs = totalHrs > 7.5 ? parseFloat((totalHrs - 7.5).toFixed(2)) : 0;
-
-        const dayStart = new Date(year, month, day, 0, 0, 0);
-        const dayEnd = new Date(year, month, day, 23, 59, 59);
-
-        const record = await Attendance.findOneAndUpdate(
-          { employeeId: employee._id, date: { $gte: dayStart, $lte: dayEnd } },
-          {
-            employeeId: employee._id,
-            tokenNo: employee.tokenNo,
-            date: currentDate,
-            punchIn,
-            punchOut,
-            totalHours: totalHrs,
-            overtimeHours: overtimeHrs,
-            status: 'Present',
-            shiftStartTime: '07:00',
-            supervisorApproved: true,
-            isSunday: false,
-            isLate: false,
-            punchInLocation: {
-              latitude: 11.983878,
-              longitude: 75.374253,
-              locationName: 'Keltron Kannur Plant (Google Timeline 100m Geofence)',
-              isGeofencedAutoPunch: true
-            },
-            punchOutLocation: {
-              latitude: 11.983878,
-              longitude: 75.374253,
-              locationName: 'Keltron Kannur Plant (Google Timeline 100m Geofence)',
-              isGeofencedAutoPunch: true
-            }
-          },
-          { upsert: true, new: true }
-        );
-        importedRecords.push(record);
-      }
-    }
-
-    res.json({
-      message: `Successfully synchronized ${importedRecords.length} punching records from Google Maps Timeline!`,
-      count: importedRecords.length,
-      records: importedRecords
-    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

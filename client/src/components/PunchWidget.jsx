@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { Clock, Play, Square, ShieldAlert, Navigation, Zap, Upload, FileText, CheckCircle, RefreshCw, X } from 'lucide-react';
+import { Clock, Play, Square, ShieldAlert, Navigation } from 'lucide-react';
 
 const KELTRON_KANNUR_COORDS = {
   latitude: 11.983878,
   longitude: 75.374253,
   name: 'Keltron Component Complex Ltd (Dharmasala, Kalliassery)',
-  radiusMeters: 700 // Updated to 700-meter company perimeter as requested
+  radiusMeters: 700
 };
 
 // Calculate Haversine distance in meters
 const calculateDistanceInMeters = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Earth radius in meters
+  const R = 6371e3;
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
@@ -30,6 +30,7 @@ const PunchWidget = ({ onPunchUpdate }) => {
   const { user, API_BASE } = useContext(AuthContext);
   const [time, setTime] = useState(new Date());
   const [activePunch, setActivePunch] = useState(null);
+  const [recentRecords, setRecentRecords] = useState([]);
   const [empStatus, setEmpStatus] = useState('Active');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -40,13 +41,6 @@ const PunchWidget = ({ onPunchUpdate }) => {
   const [distanceToKeltron, setDistanceToKeltron] = useState(null);
   const [geoStatus, setGeoStatus] = useState('Acquiring live GPS geofence (700m radius)...');
   const [autoPunchLog, setAutoPunchLog] = useState('');
-
-  // Google Maps Timeline Importer Modal State
-  const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
-  const [timelineJsonText, setTimelineJsonText] = useState('');
-  const [timelineMonth, setTimelineMonth] = useState('2026-08');
-  const [syncingTimeline, setSyncingTimeline] = useState(false);
-  const [timelineMsg, setTimelineMsg] = useState('');
 
   const tokenNo = user?.employeeToken || '8709';
   const prevInsideRef = useRef(null);
@@ -68,6 +62,9 @@ const PunchWidget = ({ onPunchUpdate }) => {
       }
 
       if (attRes.data && attRes.data.length > 0) {
+        // Set recent records for display (up to 7 latest)
+        setRecentRecords(attRes.data.slice(0, 7));
+
         const latest = attRes.data[0];
         if (latest.status === 'In Progress' || latest.status === 'Pending Late Approval' || (!latest.punchOut && latest.punchIn)) {
           setActivePunch(latest);
@@ -76,6 +73,7 @@ const PunchWidget = ({ onPunchUpdate }) => {
         }
       } else {
         setActivePunch(null);
+        setRecentRecords([]);
       }
     } catch (err) {
       console.error('Error fetching attendance status:', err);
@@ -112,15 +110,10 @@ const PunchWidget = ({ onPunchUpdate }) => {
 
         // Automatic Punch Trigger for 700m Perimeter
         if (autoPunchEnabled && empStatus !== 'Pending Approval') {
-          // ENTER 700m perimeter -> Automatic Punch In
           if (isInside700m && prevInsideRef.current === false && !activePunch) {
-            console.log('⚡ Entered 700m factory zone! Auto-punching in...');
             setAutoPunchLog(`⚡ Auto-Punched In! Entered 700m boundary (${dist}m)`);
             handlePunchIn(lat, lng, true);
-          }
-          // EXIT 700m perimeter -> Automatic Punch Out
-          else if (!isInside700m && prevInsideRef.current === true && activePunch) {
-            console.log('⚡ Exited 700m factory zone! Auto-punching out...');
+          } else if (!isInside700m && prevInsideRef.current === true && activePunch) {
             setAutoPunchLog(`⚡ Auto-Punched Out! Left 700m boundary (${dist}m)`);
             handlePunchOut(lat, lng, true);
           }
@@ -129,7 +122,6 @@ const PunchWidget = ({ onPunchUpdate }) => {
         prevInsideRef.current = isInside700m;
       },
       (err) => {
-        console.warn('Geolocation Watch Error:', err.message);
         setGeoStatus('📍 GPS Geofence Active (Target 11.9838°N, 75.3742°E, Radius: 700m)');
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
@@ -203,39 +195,6 @@ const PunchWidget = ({ onPunchUpdate }) => {
     }
   };
 
-  // Google Maps Timeline History Synchronization
-  const handleSyncTimelineMonth = async () => {
-    setSyncingTimeline(true);
-    setTimelineMsg('');
-    try {
-      let timelineVisits = null;
-      if (timelineJsonText.trim()) {
-        try {
-          const parsed = JSON.parse(timelineJsonText);
-          timelineVisits = Array.isArray(parsed) ? parsed : (parsed.timelineObjects || parsed.rawSignals || [parsed]);
-        } catch (e) {
-          setTimelineMsg('❌ Invalid JSON format. Please paste valid Google Takeout JSON or use 1-click Auto Backfill.');
-          setSyncingTimeline(false);
-          return;
-        }
-      }
-
-      const res = await axios.post(`${API_BASE}/attendance/import-timeline`, {
-        tokenNo,
-        timelineVisits,
-        autoBackfillMonth: timelineVisits ? null : timelineMonth
-      });
-
-      setTimelineMsg(`✅ ${res.data.message}`);
-      fetchAttendanceStatus();
-      if (onPunchUpdate) onPunchUpdate();
-    } catch (err) {
-      setTimelineMsg(`❌ Sync Failed: ${err.response?.data?.message || err.message}`);
-    } finally {
-      setSyncingTimeline(false);
-    }
-  };
-
   const isPendingApproval = empStatus === 'Pending Approval';
   const isInside700m = distanceToKeltron !== null && distanceToKeltron <= KELTRON_KANNUR_COORDS.radiusMeters;
 
@@ -245,7 +204,7 @@ const PunchWidget = ({ onPunchUpdate }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
           <Clock style={{ color: '#06b6d4' }} size={22} />
           <div>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>MPP 700M Automated Punching Terminal</h3>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>MPP Automated Punching Terminal</h3>
             <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 600 }}>Token #{tokenNo} • 700m Geofence Active</span>
           </div>
         </div>
@@ -395,130 +354,53 @@ const PunchWidget = ({ onPunchUpdate }) => {
         )}
       </div>
 
-      {/* Google Timeline History Sync Trigger Button */}
-      <button
-        onClick={() => setIsTimelineModalOpen(true)}
-        className="btn btn-secondary"
-        style={{ width: '100%', padding: '0.5rem', fontSize: '0.8rem', backgroundColor: '#1e293b', border: '1px solid #334155' }}
-      >
-        <FileText size={15} style={{ color: '#06b6d4' }} /> 📍 Sync Google Maps Timeline History
-      </button>
-
-      {/* Google Maps Timeline Sync Modal */}
-      {isTimelineModalOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '1rem'
-        }}>
-          <div className="card animate-fade-in" style={{ maxWidth: '600px', width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: '1.75rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', borderBottom: '1px solid #334155', paddingBottom: '0.6rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Navigation size={22} style={{ color: '#38bdf8' }} />
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#f8fafc' }}>
-                  Sync Google Maps Timeline History
-                </h3>
-              </div>
-              <button onClick={() => setIsTimelineModalOpen(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <div style={{
-              backgroundColor: '#090d16',
-              border: '1px solid #0284c7',
-              borderRadius: '8px',
-              padding: '0.85rem',
-              fontSize: '0.8rem',
-              color: '#cbd5e1',
-              marginBottom: '1.2rem',
-              lineHeight: '1.4'
-            }}>
-              <strong style={{ color: '#38bdf8' }}>How Google Maps Timeline Sync Works:</strong>
-              <p style={{ margin: '0.3rem 0 0 0' }}>
-                Google Maps Timeline records your arrival and departure times when you visit <strong>Keltron Component Complex Ltd (Dharmasala, Kalliassery)</strong>. You can paste your Timeline JSON export or use 1-click monthly backfill to generate all past daily Punch In & Punch Out logs automatically.
-              </p>
-            </div>
-
-            {timelineMsg && (
-              <div style={{
-                padding: '0.65rem 0.85rem',
-                borderRadius: '6px',
-                marginBottom: '1rem',
-                fontSize: '0.85rem',
-                backgroundColor: timelineMsg.includes('✅') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
-                color: timelineMsg.includes('✅') ? '#34d399' : '#f87171',
-                border: timelineMsg.includes('✅') ? '1px solid #10b981' : '1px solid #f43f5e'
+      {/* Recent Attendance & Overtime Logs */}
+      <div style={{
+        backgroundColor: '#090d16',
+        borderRadius: '8px',
+        padding: '0.75rem',
+        border: '1px solid #1e293b',
+        marginTop: '0.5rem'
+      }}>
+        <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: '#f8fafc' }}>
+          Recent Attendance & Overtime Logs
+        </h4>
+        {recentRecords.length > 0 ? (
+          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+            {recentRecords.map(att => (
+              <div key={att._id} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '0.35rem 0',
+                borderBottom: '1px solid #1e293b',
+                fontSize: '0.78rem'
               }}>
-                {timelineMsg}
+                <span style={{ color: '#cbd5e1' }}>
+                  {new Date(att.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                </span>
+                <span style={{ color: '#34d399' }}>
+                  {att.punchIn ? new Date(att.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                </span>
+                <span style={{ color: '#38bdf8' }}>
+                  {att.punchOut ? new Date(att.punchOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'On Shift'}
+                </span>
+                <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+                  {att.totalHours || '-'}h
+                </span>
+                <span style={{ color: att.overtimeHours > 0 ? '#fbbf24' : '#64748b', fontWeight: 600 }}>
+                  OT:{att.overtimeHours || 0}h
+                </span>
+                <span className={`badge ${att.status === 'Present' ? 'badge-emerald' : 'badge-amber'}`} style={{ fontSize: '0.65rem', padding: '0.1rem 0.3rem' }}>
+                  {att.status === 'Present' ? 'P' : att.status === 'In Progress' ? 'IN' : 'L'}
+                </span>
               </div>
-            )}
-
-            {/* Quick 1-Click Monthly Timeline Sync */}
-            <div style={{ marginBottom: '1.25rem', backgroundColor: '#0f172a', padding: '1rem', borderRadius: '8px', border: '1px solid #334155' }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc', display: 'block', marginBottom: '0.4rem' }}>
-                ⚡ 1-Click Month Timeline Auto-Sync:
-              </label>
-              <div style={{ display: 'flex', gap: '0.6rem' }}>
-                <input
-                  type="month"
-                  value={timelineMonth}
-                  onChange={(e) => setTimelineMonth(e.target.value)}
-                  className="form-input"
-                  style={{ width: '180px' }}
-                />
-                <button
-                  type="button"
-                  onClick={handleSyncTimelineMonth}
-                  disabled={syncingTimeline}
-                  className="btn btn-primary"
-                  style={{ flex: 1 }}
-                >
-                  {syncingTimeline ? <RefreshCw className="spin" size={16} /> : <Zap size={16} />}
-                  {' '} Sync Month Timeline Punch Logs
-                </button>
-              </div>
-            </div>
-
-            {/* Paste Google Takeout / Timeline JSON */}
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#cbd5e1', display: 'block', marginBottom: '0.4rem' }}>
-                Or Paste Google Maps Timeline JSON Export:
-              </label>
-              <textarea
-                value={timelineJsonText}
-                onChange={(e) => setTimelineJsonText(e.target.value)}
-                placeholder='Paste Google Takeout location history JSON or visit objects: [{"date":"2026-08-18","punchIn":"06:55:00","punchOut":"15:10:00"}]'
-                rows={4}
-                className="form-input"
-                style={{ width: '100%', fontSize: '0.78rem', fontFamily: 'monospace' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
-              <button type="button" onClick={() => setIsTimelineModalOpen(false)} className="btn btn-secondary">
-                Close
-              </button>
-              <button
-                type="button"
-                onClick={handleSyncTimelineMonth}
-                disabled={syncingTimeline}
-                className="btn btn-success"
-              >
-                {syncingTimeline ? 'Processing...' : 'Import Timeline Records'}
-              </button>
-            </div>
+            ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: 0 }}>No attendance punch logs recorded yet.</p>
+        )}
+      </div>
     </div>
   );
 };
