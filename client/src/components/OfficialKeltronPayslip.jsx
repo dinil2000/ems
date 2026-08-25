@@ -55,9 +55,9 @@ const OfficialKeltronPayslip = ({ tokenNoInput, onManageDeductions }) => {
         </div>
 
         <div style={{ display: 'flex', gap: '0.6rem' }}>
-          {(user?.role === 'SiteAdmin' || user?.role === 'Supervisor') && onManageDeductions && (
+          {onManageDeductions && (
             <button className="btn btn-secondary" onClick={onManageDeductions}>
-              <Edit3 size={15} /> Edit Monthly Deductions
+              <Edit3 size={15} /> ✏️ Edit My Deductions
             </button>
           )}
 

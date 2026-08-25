@@ -118,28 +118,26 @@ export default function PayrollScreen({ user, onBack }) {
         <Text style={styles.headerTitle}>My Salary Slip</Text>
       </View>
 
-      {/* Sub-Tab Navigation Toggle — only show "Edit Deductions" for Admin/Supervisor */}
-      {isAdmin && (
-        <View style={styles.toggleBar}>
-          <TouchableOpacity
-            style={[styles.toggleItem, activeTab === 'slip' && styles.toggleItemActive]}
-            onPress={() => setActiveTab('slip')}
-          >
-            <Text style={[styles.toggleText, activeTab === 'slip' && styles.toggleTextActive]}>
-              📄 My Salary Slip
-            </Text>
-          </TouchableOpacity>
+      {/* Sub-Tab Navigation Toggle — every employee can edit their own deductions */}
+      <View style={styles.toggleBar}>
+        <TouchableOpacity
+          style={[styles.toggleItem, activeTab === 'slip' && styles.toggleItemActive]}
+          onPress={() => setActiveTab('slip')}
+        >
+          <Text style={[styles.toggleText, activeTab === 'slip' && styles.toggleTextActive]}>
+            📄 My Salary Slip
+          </Text>
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.toggleItem, activeTab === 'deductions' && styles.toggleItemActive]}
-            onPress={() => setActiveTab('deductions')}
-          >
-            <Text style={[styles.toggleText, activeTab === 'deductions' && styles.toggleTextActive]}>
-              ⚙️ Edit Deductions
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        <TouchableOpacity
+          style={[styles.toggleItem, activeTab === 'deductions' && styles.toggleItemActive]}
+          onPress={() => setActiveTab('deductions')}
+        >
+          <Text style={[styles.toggleText, activeTab === 'deductions' && styles.toggleTextActive]}>
+            ✏️ Edit My Deductions
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         {loading ? (

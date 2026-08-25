@@ -84,15 +84,13 @@ const PayrollTable = () => {
             <FileText size={14} /> Authentic Keltron Slip
           </button>
 
-          {(user?.role === 'SiteAdmin' || user?.role === 'Supervisor') && (
-            <button
-              className={`btn ${activeSubTab === 'deductions' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveSubTab('deductions')}
-              style={{ fontSize: '0.82rem', padding: '0.4rem 0.8rem' }}
-            >
-              <Settings size={14} /> Deductions & Rates Manager
-            </button>
-          )}
+          <button
+            className={`btn ${activeSubTab === 'deductions' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setActiveSubTab('deductions')}
+            style={{ fontSize: '0.82rem', padding: '0.4rem 0.8rem' }}
+          >
+            <Settings size={14} /> ✏️ Edit My Deductions
+          </button>
 
           <button
             className={`btn ${activeSubTab === 'register' ? 'btn-primary' : 'btn-secondary'}`}
