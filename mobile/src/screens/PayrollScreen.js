@@ -19,32 +19,44 @@ export default function PayrollScreen({ user, onBack }) {
   const [saving, setSaving] = useState(false);
 
   // Deduction Form State
-  const [canteenDeduction, setCanteenDeduction] = useState('262.50');
-  const [festivalAdvance, setFestivalAdvance] = useState('1500.00');
-  const [providentFund, setProvidentFund] = useState('1800.00');
-  const [professionalTax, setProfessionalTax] = useState('250.00');
-  const [medicalInsurance, setMedicalInsurance] = useState('532.00');
-  const [dailyRate, setDailyRate] = useState('825.94');
+  const [canteenDeduction, setCanteenDeduction] = useState('0');
+  const [festivalAdvance, setFestivalAdvance] = useState('0');
+  const [providentFund, setProvidentFund] = useState('0');
+  const [professionalTax, setProfessionalTax] = useState('0');
+  const [medicalInsurance, setMedicalInsurance] = useState('0');
+
+  // Use current month dynamically
+  const getCurrentMonth = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  const getCurrentMonthLabel = () => {
+    const now = new Date();
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    return `${months[now.getMonth()]} ${now.getFullYear()}`;
+  };
+
+  const isAdmin = user?.role === 'SiteAdmin' || user?.role === 'Supervisor';
 
   const fetchPayslip = async () => {
     setLoading(true);
     try {
       const urls = await getApiUrlList();
+      const currentMonth = getCurrentMonth();
       for (const url of urls) {
         try {
-          const res = await axios.get(`${url}/payroll/slip/${user.employeeToken}?month=2026-05`, { timeout: 6000 });
+          // Only fetch the logged-in employee's own slip
+          const res = await axios.get(`${url}/payroll/slip/${user.employeeToken}?month=${currentMonth}`, { timeout: 6000 });
           if (res.data) {
             setSlip(res.data);
             if (res.data.deductionsRaw) {
               const d = res.data.deductionsRaw;
-              setCanteenDeduction(String(d.canteenDeduction || 262.50));
-              setFestivalAdvance(String(d.festivalAdvance || 1500.00));
-              setProvidentFund(String(d.providentFund || 1800.00));
-              setProfessionalTax(String(d.professionalTax || 250.00));
-              setMedicalInsurance(String(d.medicalInsurance || 532.00));
-            }
-            if (res.data.dailyRate) {
-              setDailyRate(String(res.data.dailyRate));
+              setCanteenDeduction(String(d.canteenDeduction || 0));
+              setFestivalAdvance(String(d.festivalAdvance || 0));
+              setProvidentFund(String(d.providentFund || 0));
+              setProfessionalTax(String(d.professionalTax || 0));
+              setMedicalInsurance(String(d.medicalInsurance || 0));
             }
           }
           break;
@@ -65,12 +77,13 @@ export default function PayrollScreen({ user, onBack }) {
     setSaving(true);
     try {
       const urls = await getApiUrlList();
+      const currentMonth = getCurrentMonth();
       let res = null;
       for (const url of urls) {
         try {
           res = await axios.post(`${url}/payroll/deductions`, {
             tokenNo: user.employeeToken,
-            yearMonth: '2026-05',
+            yearMonth: currentMonth,
             canteenDeduction: Number(canteenDeduction),
             festivalAdvance: Number(festivalAdvance),
             providentFund: Number(providentFund),
@@ -102,35 +115,37 @@ export default function PayrollScreen({ user, onBack }) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backBtnText}>◀ Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Official Keltron Payslip Ticket</Text>
+        <Text style={styles.headerTitle}>My Salary Slip</Text>
       </View>
 
-      {/* Sub-Tab Navigation Toggle */}
-      <View style={styles.toggleBar}>
-        <TouchableOpacity
-          style={[styles.toggleItem, activeTab === 'slip' && styles.toggleItemActive]}
-          onPress={() => setActiveTab('slip')}
-        >
-          <Text style={[styles.toggleText, activeTab === 'slip' && styles.toggleTextActive]}>
-            📄 Authentic Slip Ticket
-          </Text>
-        </TouchableOpacity>
+      {/* Sub-Tab Navigation Toggle — only show "Edit Deductions" for Admin/Supervisor */}
+      {isAdmin && (
+        <View style={styles.toggleBar}>
+          <TouchableOpacity
+            style={[styles.toggleItem, activeTab === 'slip' && styles.toggleItemActive]}
+            onPress={() => setActiveTab('slip')}
+          >
+            <Text style={[styles.toggleText, activeTab === 'slip' && styles.toggleTextActive]}>
+              📄 My Salary Slip
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.toggleItem, activeTab === 'deductions' && styles.toggleItemActive]}
-          onPress={() => setActiveTab('deductions')}
-        >
-          <Text style={[styles.toggleText, activeTab === 'deductions' && styles.toggleTextActive]}>
-            ⚙️ Edit Deductions
-          </Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={[styles.toggleItem, activeTab === 'deductions' && styles.toggleItemActive]}
+            onPress={() => setActiveTab('deductions')}
+          >
+            <Text style={[styles.toggleText, activeTab === 'deductions' && styles.toggleTextActive]}>
+              ⚙️ Edit Deductions
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={styles.content}>
         {loading ? (
           <ActivityIndicator size="large" color="#38bdf8" style={{ marginTop: 40 }} />
         ) : activeTab === 'slip' && slip ? (
-          /* Official Thermal Payslip Ticket Component matching exact physical slip */
+          /* Official Thermal Payslip Ticket — ONLY the logged-in employee's data */
           <View style={styles.ticketCard}>
             {/* Header */}
             <Text style={styles.tCompany}>{slip.companyName}</Text>
@@ -148,7 +163,7 @@ export default function PayrollScreen({ user, onBack }) {
 
             {/* Shift Counters Line */}
             <Text style={[styles.tBold, { marginVertical: 6 }]}>
-              Days.G:{slip.daysGeneral}  SH-I:{slip.shift1Days}  SH-II:{slip.shift2Days}  SH-III:{slip.shift3Days}
+              Days.G:{slip.daysGeneral}  SH-I:{slip.shift1Days}  SH-II:{slip.shift2Days}  SH-III:{slip.shift3Days}  OT:{slip.otHours}hrs
             </Text>
 
             <View style={styles.dashedLine} />
@@ -196,11 +211,16 @@ export default function PayrollScreen({ user, onBack }) {
               <Text style={[styles.tBold, { fontSize: 18, color: '#000' }]}>₹{slip.netPay}</Text>
             </View>
           </View>
+        ) : activeTab === 'slip' ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No salary slip data available for {getCurrentMonthLabel()}.</Text>
+            <Text style={styles.emptySubText}>Salary slip is generated from your attendance punching records.</Text>
+          </View>
         ) : (
-          /* Deductions Editor Form */
+          /* Deductions Editor Form — Admin/Supervisor only */
           <View style={styles.editorCard}>
             <Text style={styles.edTitle}>⚙️ Monthly Deductions Management</Text>
-            <Text style={styles.edSub}>Set Canteen Coupons, Festival Advance & PF for May 2026</Text>
+            <Text style={styles.edSub}>Set Canteen Coupons, Festival Advance & PF for {getCurrentMonthLabel()}</Text>
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Canteen Coupon Deduction (CANT ₹):</Text>
@@ -322,6 +342,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: 40,
   },
   ticketCard: {
     backgroundColor: '#fafafa',
@@ -363,7 +384,7 @@ const styles = StyleSheet.create({
   },
   tRowSpace: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     marginVertical: 2,
   },
   tBold: {
@@ -400,6 +421,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold',
     color: '#000',
+  },
+  emptyCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  emptyText: {
+    color: '#f8fafc',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  emptySubText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    textAlign: 'center',
   },
   editorCard: {
     backgroundColor: '#1e293b',

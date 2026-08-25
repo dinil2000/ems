@@ -13,7 +13,9 @@ const OfficialKeltronPayslip = ({ tokenNoInput, onManageDeductions }) => {
   const fetchSlip = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_BASE}/payroll/slip/${targetToken}?month=2026-05`);
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const res = await axios.get(`${API_BASE}/payroll/slip/${targetToken}?month=${currentMonth}`);
       setSlip(res.data);
     } catch (err) {
       console.error('Payslip fetch error:', err);

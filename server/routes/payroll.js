@@ -45,7 +45,9 @@ router.get('/month', async (req, res) => {
 // Fetch or Save Employee Monthly Deductions & Shift Rates
 router.get('/deductions/:tokenNo', async (req, res) => {
   try {
-    const month = req.query.month || '2026-05';
+    const now = new Date();
+    const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const month = req.query.month || defaultMonth;
     let deduction = await PayrollDeduction.findOne({ tokenNo: req.params.tokenNo, yearMonth: month });
     if (!deduction) {
       deduction = await PayrollDeduction.create({
@@ -69,9 +71,11 @@ router.get('/deductions/:tokenNo', async (req, res) => {
 
 router.post('/deductions', async (req, res) => {
   try {
+    const nowDate = new Date();
+    const defaultYM = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
     const {
       tokenNo,
-      yearMonth = '2026-05',
+      yearMonth = defaultYM,
       canteenDeduction,
       festivalAdvance,
       providentFund,
@@ -117,7 +121,9 @@ router.post('/deductions', async (req, res) => {
 router.get('/slip/:tokenNo', async (req, res) => {
   try {
     const tokenNo = req.params.tokenNo;
-    const yearMonth = req.query.month || '2026-05';
+    // Default to current month if not specified
+    const now = new Date();
+    const yearMonth = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     const emp = await Employee.findOne({ tokenNo });
     if (!emp) {
@@ -129,24 +135,50 @@ router.get('/slip/:tokenNo', async (req, res) => {
       deduction = await PayrollDeduction.create({
         tokenNo,
         yearMonth,
-        canteenDeduction: 262.50,
-        festivalAdvance: 1500.00,
-        providentFund: 1800.00,
-        professionalTax: 250.00,
-        medicalInsurance: 532.00,
+        canteenDeduction: 0,
+        festivalAdvance: 0,
+        providentFund: 0,
+        professionalTax: 0,
+        medicalInsurance: 0,
         shift1Rate: 30.00,
         shift2Rate: 50.00,
         shift3Rate: 78.00,
       });
     }
 
-    // Default shift counters matching actual attendance or defaults
-    const shift1Days = 13.00;
-    const shift2Days = 4.00;
-    const shift3Days = 6.00;
-    const generalDays = 0.00;
-    const otHours = 0.00;
+    // ── Compute actual shift days from Attendance records ──
+    const [reqYear, reqMonth] = yearMonth.split('-').map(Number);
+    const monthStart = new Date(reqYear, reqMonth - 1, 1);
+    const monthEnd = new Date(reqYear, reqMonth, 0, 23, 59, 59, 999);
 
+    const attendanceRecords = await Attendance.find({
+      tokenNo,
+      date: { $gte: monthStart, $lte: monthEnd },
+      status: { $in: ['Present', 'In Progress', 'Pending Late Approval'] }
+    });
+
+    let shift1Days = 0;
+    let shift2Days = 0;
+    let shift3Days = 0;
+    let generalDays = 0;
+    let totalOTHours = 0;
+
+    for (const rec of attendanceRecords) {
+      const st = rec.shiftStartTime || '';
+      totalOTHours += rec.overtimeHours || 0;
+
+      if (st === '07:00') {
+        shift1Days += 1;
+      } else if (st === '15:00') {
+        shift2Days += 1;
+      } else if (st === '23:00') {
+        shift3Days += 1;
+      } else {
+        generalDays += 1;
+      }
+    }
+
+    // ── Compute payslip values using latest employee dailyRate from DB ──
     const dailyRate = emp.dailyRate || 825.94;
     const totalDaysWorked = shift1Days + shift2Days + shift3Days + generalDays;
     const basicEarned = Math.round(totalDaysWorked * dailyRate * 100) / 100;
@@ -156,27 +188,32 @@ router.get('/slip/:tokenNo', async (req, res) => {
     const shift3Allowance = shift3Days * (deduction.shift3Rate || 78.00);
     const totalShiftAllowance = Math.round((shift1Allowance + shift2Allowance + shift3Allowance) * 100) / 100;
 
-    const coinE = 3.50;
-    const grossPay = Math.round((basicEarned + totalShiftAllowance + coinE + deduction.specialPay + deduction.conveyanceAllowance) * 100) / 100;
+    const coinE = totalDaysWorked > 0 ? 3.50 : 0;
+    const overtimeEarned = Math.round(totalOTHours * (dailyRate / 7.5) * 2 * 100) / 100;
+    const grossPay = Math.round((basicEarned + totalShiftAllowance + coinE + overtimeEarned + (deduction.specialPay || 0) + (deduction.conveyanceAllowance || 0)) * 100) / 100;
 
     const totalDeductions = Math.round((
-      deduction.canteenDeduction +
-      deduction.festivalAdvance +
-      deduction.providentFund +
-      deduction.professionalTax +
-      deduction.medicalInsurance +
-      deduction.cooperativeDeduction +
-      deduction.otherDeduction1 +
-      deduction.otherDeduction2
+      (deduction.canteenDeduction || 0) +
+      (deduction.festivalAdvance || 0) +
+      (deduction.providentFund || 0) +
+      (deduction.professionalTax || 0) +
+      (deduction.medicalInsurance || 0) +
+      (deduction.cooperativeDeduction || 0) +
+      (deduction.otherDeduction1 || 0) +
+      (deduction.otherDeduction2 || 0)
     ) * 100) / 100;
 
     const netPay = Math.round((grossPay - totalDeductions) * 100) / 100;
+
+    // ── Format month label ──
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const monthLabel = `Payment for the Month ${monthNames[reqMonth - 1]} ${reqYear}`;
 
     res.json({
       companyName: 'KELTRON COMPONENT COMPLEX LTD.',
       location: 'Keltron Nagar, Kalliassery, Kannur',
       section: 'PRODUCTION CENTRE - I',
-      month: 'Payment for the Month May 2026',
+      month: monthLabel,
       tokenNo: emp.tokenNo,
       employeeName: emp.name,
       dailyRate: dailyRate.toFixed(2),
@@ -184,22 +221,22 @@ router.get('/slip/:tokenNo', async (req, res) => {
       shift1Days: shift1Days.toFixed(2),
       shift2Days: shift2Days.toFixed(2),
       shift3Days: shift3Days.toFixed(2),
-      otHours: otHours.toFixed(2),
+      otHours: totalOTHours.toFixed(2),
       basicEarned: basicEarned.toFixed(2),
-      overtimeEarned: '0.00',
-      specialPay: deduction.specialPay.toFixed(2),
-      conveyance: deduction.conveyanceAllowance.toFixed(2),
+      overtimeEarned: overtimeEarned.toFixed(2),
+      specialPay: (deduction.specialPay || 0).toFixed(2),
+      conveyance: (deduction.conveyanceAllowance || 0).toFixed(2),
       shiftAllowance: totalShiftAllowance.toFixed(2),
       coinE: coinE.toFixed(2),
-      canteenDeduction: deduction.canteenDeduction.toFixed(2),
-      festivalAdvance: deduction.festivalAdvance.toFixed(2),
-      providentFund: deduction.providentFund.toFixed(2),
+      canteenDeduction: (deduction.canteenDeduction || 0).toFixed(2),
+      festivalAdvance: (deduction.festivalAdvance || 0).toFixed(2),
+      providentFund: (deduction.providentFund || 0).toFixed(2),
       esi: '0.00',
-      professionalTax: deduction.professionalTax.toFixed(2),
-      medicalInsurance: deduction.medicalInsurance.toFixed(2),
-      cooperativeDeduction: deduction.cooperativeDeduction.toFixed(2),
-      otherDeduction1: deduction.otherDeduction1.toFixed(2),
-      otherDeduction2: deduction.otherDeduction2.toFixed(2),
+      professionalTax: (deduction.professionalTax || 0).toFixed(2),
+      medicalInsurance: (deduction.medicalInsurance || 0).toFixed(2),
+      cooperativeDeduction: (deduction.cooperativeDeduction || 0).toFixed(2),
+      otherDeduction1: (deduction.otherDeduction1 || 0).toFixed(2),
+      otherDeduction2: (deduction.otherDeduction2 || 0).toFixed(2),
       grossPay: grossPay.toFixed(2),
       totalDeductions: totalDeductions.toFixed(2),
       netPay: netPay.toFixed(2),

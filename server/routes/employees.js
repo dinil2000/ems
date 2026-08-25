@@ -92,6 +92,7 @@ router.put('/:id', async (req, res) => {
       qualification,
       experienceYears,
       basicSalary,
+      dailyRate,
       machineExpertise,
       gender,
       unit,
@@ -104,6 +105,7 @@ router.put('/:id', async (req, res) => {
     if (qualification !== undefined) updateFields.qualification = qualification;
     if (experienceYears !== undefined) updateFields.experienceYears = parseInt(experienceYears) || 0;
     if (basicSalary !== undefined) updateFields.basicSalary = parseFloat(basicSalary) || 0;
+    if (dailyRate !== undefined) updateFields.dailyRate = parseFloat(dailyRate) || 825.94;
     if (machineExpertise !== undefined) {
       updateFields.machineExpertise = Array.isArray(machineExpertise) ? machineExpertise : [machineExpertise];
     }
@@ -111,7 +113,12 @@ router.put('/:id', async (req, res) => {
     if (unit !== undefined) updateFields.unit = unit;
     if (status !== undefined) updateFields.status = status;
 
-    const updatedEmp = await Employee.findByIdAndUpdate(req.params.id, updateFields, { new: true });
+    // Also support lookup by tokenNo if _id doesn't match
+    let updatedEmp = await Employee.findByIdAndUpdate(req.params.id, updateFields, { new: true });
+    if (!updatedEmp) {
+      // Fallback: try to find by tokenNo
+      updatedEmp = await Employee.findOneAndUpdate({ tokenNo: req.params.id }, updateFields, { new: true });
+    }
     if (!updatedEmp) {
       return res.status(404).json({ message: 'Employee not found.' });
     }
