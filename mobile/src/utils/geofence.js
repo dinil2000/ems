@@ -4,17 +4,17 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const KELTRON_KANNUR_GEOFENCE = {
-  identifier: 'KELTRON_KANNUR_PLANT',
-  latitude: 11.984011,
-  longitude: 75.375067,
-  radius: 150, // 150-meter campus boundary
+  identifier: 'KELTRON_KANNUR_PLANT_100M',
+  latitude: 11.983878,
+  longitude: 75.374253,
+  radius: 100, // Exact 100-meter company perimeter as requested
   notifyOnEnter: true,
   notifyOnExit: true,
 };
 
 export const GEOFENCE_TASK_NAME = 'KELTRON_KANNUR_AUTOMATED_PUNCH_TASK';
 
-// Define Background Task Handler
+// Define Background Task Handler for Automated Geofence Punch In & Out
 TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data: { eventType, region }, error }) => {
   if (error) {
     console.error('Geofence Task Error:', error.message);
@@ -30,23 +30,23 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data: { eventType, region },
     const tokenNo = user.employeeToken;
 
     if (eventType === Location.GeofencingEventType.Enter) {
-      console.log(`📍 Entered Keltron Kannur Campus boundary! Auto Punching In for Token #${tokenNo}`);
+      console.log(`📍 Entered 100m Keltron Kannur Plant boundary! Automated Punch In for Token #${tokenNo}`);
       await axios.post(`${apiUrl}/attendance/punch-in`, {
         tokenNo,
         latitude: KELTRON_KANNUR_GEOFENCE.latitude,
         longitude: KELTRON_KANNUR_GEOFENCE.longitude,
         isGeofencedAutoPunch: true,
-        locationName: 'Keltron Kannur Campus (Mangattuparamba)'
-      });
+        locationName: 'Keltron Kannur Plant (Inside 100m Geofence)'
+      }, { timeout: 8000 });
     } else if (eventType === Location.GeofencingEventType.Exit) {
-      console.log(`👋 Exited Keltron Kannur Campus boundary! Auto Punching Out for Token #${tokenNo}`);
+      console.log(`👋 Exited 100m Keltron Kannur Plant boundary! Automated Punch Out for Token #${tokenNo}`);
       await axios.post(`${apiUrl}/attendance/punch-out`, {
         tokenNo,
         latitude: KELTRON_KANNUR_GEOFENCE.latitude,
         longitude: KELTRON_KANNUR_GEOFENCE.longitude,
         isGeofencedAutoPunch: true,
-        locationName: 'Keltron Kannur Campus (Mangattuparamba)'
-      });
+        locationName: 'Keltron Kannur Plant (Exited 100m Geofence)'
+      }, { timeout: 8000 });
     }
   } catch (err) {
     console.error('Auto Geofence Punch Failed:', err.message);
@@ -71,7 +71,7 @@ export const setupGeofenceTracking = async () => {
       await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, [KELTRON_KANNUR_GEOFENCE]);
       return {
         success: true,
-        message: '📍 Keltron Kannur Campus Geofenced Auto-Punch Service Active (Lat: 11.9840° N, Lng: 75.3750° E, Radius: 150m)'
+        message: '📍 Keltron Kannur Plant 100m Geofence Auto-Punch Active (Lat: 11.9838°N, Lng: 75.3742°E, Radius: 100m)'
       };
     }
 
@@ -81,7 +81,7 @@ export const setupGeofenceTracking = async () => {
   }
 };
 
-// Calculate Haversine distance in meters to Keltron Kannur Campus
+// Calculate Haversine distance in meters to Keltron Kannur Campus (11.983878, 75.374253)
 export const calculateDistanceToKeltron = (lat, lng) => {
   const R = 6371e3; // Earth radius in meters
   const φ1 = (lat * Math.PI) / 180;

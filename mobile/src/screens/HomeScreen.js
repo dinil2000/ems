@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,20 +8,33 @@ import {
   Alert,
   ScrollView,
   RefreshControl,
+  Modal,
+  TextInput,
+  SafeAreaView,
 } from 'react-native';
 import axios from 'axios';
 import * as Location from 'expo-location';
 import { getApiUrlList } from '../config/api';
-import { KELTRON_KANNUR_GEOFENCE, calculateDistanceToKeltron } from '../utils/geofence';
+import { KELTRON_KANNUR_GEOFENCE, calculateDistanceToKeltron, setupGeofenceTracking } from '../utils/geofence';
 
 export default function HomeScreen({ user, onLogout, onNavigate }) {
   const [clockTime, setClockTime] = useState(new Date().toLocaleTimeString());
   const [attendance, setAttendance] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [locationStatus, setLocationStatus] = useState('📍 Geofence Active (Keltron Kannur Campus)');
+  const [locationStatus, setLocationStatus] = useState('📍 Geofence Active (Keltron 100m Zone)');
   const [userLocation, setUserLocation] = useState(null);
   const [distanceMeters, setDistanceMeters] = useState(null);
+  const [autoPunchEnabled, setAutoPunchEnabled] = useState(true);
+  const [autoPunchMessage, setAutoPunchMessage] = useState('');
+
+  // Google Maps Timeline Modal State
+  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  const [timelineMonth, setTimelineMonth] = useState('2026-08');
+  const [timelineJson, setTimelineJson] = useState('');
+  const [syncingTimeline, setSyncingTimeline] = useState(false);
+
+  const prevInsideRef = useRef(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -30,35 +43,77 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch Mobile Location
-  const checkCurrentLocation = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLocationStatus('📍 GPS Permission Denied (Using Factory Default)');
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const lat = loc.coords.latitude;
-      const lng = loc.coords.longitude;
-      setUserLocation({ latitude: lat, longitude: lng });
-
-      const dist = calculateDistanceToKeltron(lat, lng);
-      setDistanceMeters(dist);
-
-      if (dist <= KELTRON_KANNUR_GEOFENCE.radius) {
-        setLocationStatus(`📍 Inside Plant Perimeter (${dist}m from Keltron Kannur)`);
-      } else {
-        setLocationStatus(`📍 Geofence Verified: ${dist}m from Keltron Kannur`);
-      }
-    } catch (err) {
-      setLocationStatus('📍 GPS Active (Keltron Kannur Target 11.9840°N, 75.3750°E)');
-    }
-  };
-
+  // Initialize Background Geofencing Task
   useEffect(() => {
-    checkCurrentLocation();
+    setupGeofenceTracking().catch(e => console.log('Geofence setup note:', e.message));
   }, []);
+
+  // Live Location Watcher for Real-Time Automated 100m Punch In / Punch Out
+  useEffect(() => {
+    let subscriber = null;
+
+    const startLocationWatch = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationStatus('📍 GPS Permission Denied (Using Factory Default)');
+          return;
+        }
+
+        subscriber = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 4000,
+            distanceInterval: 3,
+          },
+          (loc) => {
+            const lat = loc.coords.latitude;
+            const lng = loc.coords.longitude;
+            setUserLocation({ latitude: lat, longitude: lng });
+
+            const dist = calculateDistanceToKeltron(lat, lng);
+            setDistanceMeters(dist);
+
+            const isInside100m = dist <= KELTRON_KANNUR_GEOFENCE.radius;
+
+            if (isInside100m) {
+              setLocationStatus(`📍 Inside 100m Plant Boundary (${dist}m)`);
+            } else {
+              setLocationStatus(`📍 ${dist}m from Plant (100m Zone Active)`);
+            }
+
+            // Real-Time Automated Punch In / Out Trigger
+            if (autoPunchEnabled) {
+              const isPunchedIn = attendance && attendance.punchIn && !attendance.punchOut;
+
+              // ENTER 100m boundary -> Auto Punch In
+              if (isInside100m && prevInsideRef.current === false && !isPunchedIn) {
+                console.log('⚡ Entered 100m plant boundary! Auto Punching In...');
+                setAutoPunchMessage(`⚡ Auto-Punched In! Entered 100m perimeter (${dist}m)`);
+                handleAutoPunchIn(lat, lng);
+              }
+              // EXIT 100m boundary -> Auto Punch Out
+              else if (!isInside100m && prevInsideRef.current === true && isPunchedIn) {
+                console.log('⚡ Exited 100m plant boundary! Auto Punching Out...');
+                setAutoPunchMessage(`⚡ Auto-Punched Out! Left 100m perimeter (${dist}m)`);
+                handleAutoPunchOut(lat, lng);
+              }
+            }
+
+            prevInsideRef.current = isInside100m;
+          }
+        );
+      } catch (err) {
+        console.warn('Location watch error:', err.message);
+      }
+    };
+
+    startLocationWatch();
+
+    return () => {
+      if (subscriber) subscriber.remove();
+    };
+  }, [autoPunchEnabled, attendance]);
 
   const fetchStatus = async () => {
     try {
@@ -83,18 +138,59 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await checkCurrentLocation();
     await fetchStatus();
     setRefreshing(false);
   };
 
+  const handleAutoPunchIn = async (lat, lng) => {
+    try {
+      const urls = await getApiUrlList();
+      for (const url of urls) {
+        try {
+          const res = await axios.post(`${url}/attendance/punch-in`, {
+            tokenNo: user.employeeToken,
+            latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
+            longitude: lng || KELTRON_KANNUR_GEOFENCE.longitude,
+            isGeofencedAutoPunch: true,
+            locationName: 'Keltron Kannur Plant (Inside 100m Geofence)'
+          }, { timeout: 6000 });
+          if (res.data) {
+            Alert.alert('⚡ Automated Punch In', 'You entered the 100m Keltron Kannur plant perimeter!');
+            fetchStatus();
+            break;
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+  };
+
+  const handleAutoPunchOut = async (lat, lng) => {
+    try {
+      const urls = await getApiUrlList();
+      for (const url of urls) {
+        try {
+          const res = await axios.post(`${url}/attendance/punch-out`, {
+            tokenNo: user.employeeToken,
+            latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
+            longitude: lng || KELTRON_KANNUR_GEOFENCE.longitude,
+            isGeofencedAutoPunch: true,
+            locationName: 'Keltron Kannur Plant (Exited 100m Geofence)'
+          }, { timeout: 6000 });
+          if (res.data) {
+            Alert.alert('⚡ Automated Punch Out', 'You left the 100m Keltron Kannur plant perimeter!');
+            fetchStatus();
+            break;
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+  };
+
   const handlePunchIn = async () => {
     setLoading(true);
-    await checkCurrentLocation();
-
     const lat = userLocation?.latitude || KELTRON_KANNUR_GEOFENCE.latitude;
     const lng = userLocation?.longitude || KELTRON_KANNUR_GEOFENCE.longitude;
-    const isInsideGeofence = distanceMeters !== null ? distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius : true;
+    const isInside = distanceMeters !== null ? distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius : true;
 
     try {
       const urls = await getApiUrlList();
@@ -105,21 +201,18 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             tokenNo: user.employeeToken,
             latitude: lat,
             longitude: lng,
-            isGeofencedAutoPunch: isInsideGeofence,
-            locationName: isInsideGeofence ? 'Keltron Kannur Campus (Inside 150m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
+            isGeofencedAutoPunch: isInside,
+            locationName: isInside ? 'Keltron Kannur Plant (Inside 100m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
           }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
       }
 
       if (res) {
-        Alert.alert(
-          'Punch In Success',
-          `${res.data.message}\n\n📍 Location Status: ${isInsideGeofence ? 'Keltron Kannur Geofence Verified' : `GPS Recorded (${distanceMeters}m from plant)`}`
-        );
+        Alert.alert('Punch In Success', res.data.message);
         fetchStatus();
       } else {
-        Alert.alert('Network Error', 'Unable to connect to server. Check internet connection.');
+        Alert.alert('Error', 'Unable to connect to server.');
       }
     } catch (err) {
       Alert.alert('Punch Failed', err.response?.data?.message || err.message);
@@ -130,11 +223,9 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
   const handlePunchOut = async () => {
     setLoading(true);
-    await checkCurrentLocation();
-
     const lat = userLocation?.latitude || KELTRON_KANNUR_GEOFENCE.latitude;
     const lng = userLocation?.longitude || KELTRON_KANNUR_GEOFENCE.longitude;
-    const isInsideGeofence = distanceMeters !== null ? distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius : true;
+    const isInside = distanceMeters !== null ? distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius : true;
 
     try {
       const urls = await getApiUrlList();
@@ -145,21 +236,18 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             tokenNo: user.employeeToken,
             latitude: lat,
             longitude: lng,
-            isGeofencedAutoPunch: isInsideGeofence,
-            locationName: isInsideGeofence ? 'Keltron Kannur Campus (Inside 150m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
+            isGeofencedAutoPunch: isInside,
+            locationName: isInside ? 'Keltron Kannur Plant (Inside 100m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
           }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
       }
 
       if (res) {
-        Alert.alert(
-          'Punch Out Success',
-          `${res.data.message}\n\n📍 Location Status: ${isInsideGeofence ? 'Keltron Kannur Geofence Verified' : `GPS Recorded (${distanceMeters}m from plant)`}`
-        );
+        Alert.alert('Punch Out Success', res.data.message);
         fetchStatus();
       } else {
-        Alert.alert('Network Error', 'Unable to connect to server. Check internet connection.');
+        Alert.alert('Error', 'Unable to connect to server.');
       }
     } catch (err) {
       Alert.alert('Punch Out Failed', err.response?.data?.message || err.message);
@@ -168,7 +256,50 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     }
   };
 
+  const handleSyncGoogleTimeline = async () => {
+    setSyncingTimeline(true);
+    try {
+      let timelineVisits = null;
+      if (timelineJson.trim()) {
+        try {
+          const parsed = JSON.parse(timelineJson);
+          timelineVisits = Array.isArray(parsed) ? parsed : (parsed.timelineObjects || parsed.rawSignals || [parsed]);
+        } catch (e) {
+          Alert.alert('Invalid JSON', 'Please enter valid Google Takeout JSON format or use 1-click Auto Backfill.');
+          setSyncingTimeline(false);
+          return;
+        }
+      }
+
+      const urls = await getApiUrlList();
+      let res = null;
+      for (const url of urls) {
+        try {
+          res = await axios.post(`${url}/attendance/import-timeline`, {
+            tokenNo: user.employeeToken,
+            timelineVisits,
+            autoBackfillMonth: timelineVisits ? null : timelineMonth,
+          }, { timeout: 10000 });
+          if (res) break;
+        } catch (e) {}
+      }
+
+      if (res) {
+        Alert.alert('Timeline Sync Successful!', res.data.message);
+        setIsTimelineOpen(false);
+        fetchStatus();
+      } else {
+        Alert.alert('Sync Error', 'Unable to sync with server.');
+      }
+    } catch (err) {
+      Alert.alert('Sync Failed', err.response?.data?.message || err.message);
+    } finally {
+      setSyncingTimeline(false);
+    }
+  };
+
   const isPunchedIn = attendance && attendance.punchIn && !attendance.punchOut;
+  const isInside100m = distanceMeters !== null && distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius;
 
   return (
     <ScrollView
@@ -194,15 +325,35 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         </TouchableOpacity>
       </View>
 
-      {/* Digital Clock & Geofenced Punch Widget */}
+      {/* Digital Clock & 100m Automated Geofence Punch Widget */}
       <View style={styles.clockCard}>
-        <Text style={styles.clockLabel}>MPP PRODUCTION LINE DIGITAL CLOCK</Text>
+        <Text style={styles.clockLabel}>MPP 100M AUTOMATED GEOFENCE PUNCHING</Text>
         <Text style={styles.clockTime}>{clockTime}</Text>
         <Text style={styles.dateLabel}>{new Date().toDateString()}</Text>
 
-        {/* Location Status Bar */}
-        <View style={styles.locationBar}>
-          <Text style={styles.locationText}>{locationStatus}</Text>
+        {/* Live GPS Radar Bar */}
+        <View style={[styles.locationBar, isInside100m && styles.locationBarInside]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={[styles.locationText, isInside100m && { color: '#34d399' }]}>
+              {locationStatus}
+            </Text>
+            <TouchableOpacity
+              style={[styles.autoToggle, autoPunchEnabled && styles.autoToggleActive]}
+              onPress={() => setAutoPunchEnabled(!autoPunchEnabled)}
+            >
+              <Text style={[styles.autoToggleText, autoPunchEnabled && { color: '#ffffff' }]}>
+                {autoPunchEnabled ? '⚡ Auto-Punch: ON' : '⏸ Auto-Punch: OFF'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.geofenceNote}>
+            📍 Target: Keltron Kannur Plant (11.9838°N, 75.3742°E) • 100m Auto Enter/Exit Zone
+          </Text>
+
+          {autoPunchMessage ? (
+            <Text style={styles.autoMsgText}>{autoPunchMessage}</Text>
+          ) : null}
         </View>
 
         <View style={styles.statusRow}>
@@ -224,9 +375,10 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           </TouchableOpacity>
         )}
 
-        <Text style={styles.graceNote}>
-          📍 Geofencing Active: Auto-verifies GPS presence at Keltron Kannur Campus (11.9840° N, 75.3750° E, 150m radius).
-        </Text>
+        {/* Google Maps Timeline Sync Trigger */}
+        <TouchableOpacity style={styles.timelineSyncBtn} onPress={() => setIsTimelineOpen(true)}>
+          <Text style={styles.timelineSyncBtnText}>📍 Sync Google Maps Timeline History</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Navigation Options Grid */}
@@ -282,6 +434,72 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           </View>
         </View>
       )}
+
+      {/* Google Timeline Sync Modal */}
+      <Modal visible={isTimelineOpen} animationType="slide" transparent={false}>
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Sync Google Maps Timeline History</Text>
+            <TouchableOpacity onPress={() => setIsTimelineOpen(false)} style={styles.closeBtn}>
+              <Text style={styles.closeBtnText}>✕ Close</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <View style={styles.timelineInfoBox}>
+              <Text style={styles.timelineInfoTitle}>How Google Maps Timeline Works:</Text>
+              <Text style={styles.timelineInfoText}>
+                Google Maps Timeline records arrival and departure times whenever you visit Keltron Component Complex Ltd (Dharmasala, Kalliassery).
+                You can auto-backfill your month or paste Takeout JSON to reconstruct all daily Punch In & Punch Out logs.
+              </Text>
+            </View>
+
+            <View style={styles.syncCard}>
+              <Text style={styles.syncCardTitle}>⚡ 1-Click Month Timeline Auto-Sync:</Text>
+              <Text style={styles.inputHelp}>Sync all working days for selected month:</Text>
+              <TextInput
+                style={styles.input}
+                value={timelineMonth}
+                onChangeText={setTimelineMonth}
+                placeholder="2026-08 (YYYY-MM)"
+                placeholderTextColor="#64748b"
+              />
+
+              <TouchableOpacity
+                style={styles.syncBtn}
+                onPress={handleSyncGoogleTimeline}
+                disabled={syncingTimeline}
+              >
+                {syncingTimeline ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.syncBtnText}>⚡ Sync Month Timeline Punch Logs</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.syncCard}>
+              <Text style={styles.syncCardTitle}>Or Paste Google Takeout Timeline JSON:</Text>
+              <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                multiline
+                placeholder='Paste Google Takeout location history JSON or visit objects: [{"date":"2026-08-18","punchIn":"06:55:00","punchOut":"15:10:00"}]'
+                placeholderTextColor="#64748b"
+                value={timelineJson}
+                onChangeText={setTimelineJson}
+              />
+
+              <TouchableOpacity
+                style={[styles.syncBtn, { backgroundColor: '#0284c7' }]}
+                onPress={handleSyncGoogleTimeline}
+                disabled={syncingTimeline}
+              >
+                <Text style={styles.syncBtnText}>Import Timeline JSON Records</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -293,15 +511,16 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: 40,
   },
   userCard: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#334155',
   },
@@ -341,47 +560,80 @@ const styles = StyleSheet.create({
   clockCard: {
     backgroundColor: '#1e293b',
     borderRadius: 16,
-    padding: 20,
+    padding: 18,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#334155',
   },
   clockLabel: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '800',
     color: '#94a3b8',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   clockTime: {
     fontSize: 32,
     fontWeight: '800',
     color: '#38bdf8',
-    marginVertical: 6,
+    marginVertical: 4,
   },
   dateLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#94a3b8',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   locationBar: {
+    width: '100%',
     backgroundColor: '#0f172a',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
+    borderColor: '#0284c7',
+    marginBottom: 12,
+  },
+  locationBarInside: {
     borderColor: '#10b981',
-    marginBottom: 14,
   },
   locationText: {
-    fontSize: 12,
-    color: '#34d399',
+    fontSize: 11,
+    color: '#38bdf8',
     fontWeight: '700',
+    flex: 1,
+  },
+  autoToggle: {
+    backgroundColor: 'rgba(244, 63, 94, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#f43f5e',
+  },
+  autoToggleActive: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
+  },
+  autoToggleText: {
+    color: '#f87171',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  geofenceNote: {
+    fontSize: 9,
+    color: '#94a3b8',
+    marginTop: 4,
+  },
+  autoMsgText: {
+    fontSize: 10,
+    color: '#fbbf24',
+    fontWeight: '700',
+    marginTop: 4,
   },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   statusLabel: {
     fontSize: 13,
@@ -417,33 +669,40 @@ const styles = StyleSheet.create({
   punchInBtn: {
     backgroundColor: '#10b981',
     width: '100%',
-    paddingVertical: 14,
-    borderRadius: 10,
+    paddingVertical: 12,
+    borderRadius: 8,
     alignItems: 'center',
   },
   punchOutBtn: {
     backgroundColor: '#f43f5e',
     width: '100%',
-    paddingVertical: 14,
-    borderRadius: 10,
+    paddingVertical: 12,
+    borderRadius: 8,
     alignItems: 'center',
   },
   punchBtnText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
   },
-  graceNote: {
-    fontSize: 11,
+  timelineSyncBtn: {
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+    width: '100%',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  timelineSyncBtnText: {
     color: '#38bdf8',
-    textAlign: 'center',
-    marginTop: 14,
-    lineHeight: 15,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
   },
   navGrid: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
   navCard: {
@@ -483,7 +742,7 @@ const styles = StyleSheet.create({
   },
   historyRow: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     paddingVertical: 4,
   },
   historyLabel: {
@@ -493,5 +752,97 @@ const styles = StyleSheet.create({
   historyValue: {
     fontSize: 13,
     color: '#e2e8f0',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    backgroundColor: '#1e293b',
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#f8fafc',
+  },
+  closeBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  closeBtnText: {
+    color: '#f87171',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  modalContent: {
+    padding: 16,
+  },
+  timelineInfoBox: {
+    backgroundColor: '#090d16',
+    borderWidth: 1,
+    borderColor: '#0284c7',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 14,
+  },
+  timelineInfoTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#38bdf8',
+    marginBottom: 4,
+  },
+  timelineInfoText: {
+    fontSize: 11,
+    color: '#cbd5e1',
+    lineHeight: 16,
+  },
+  syncCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 10,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 14,
+  },
+  syncCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#f8fafc',
+    marginBottom: 6,
+  },
+  inputHelp: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    color: '#f8fafc',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  syncBtn: {
+    backgroundColor: '#10b981',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  syncBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
   },
 });
