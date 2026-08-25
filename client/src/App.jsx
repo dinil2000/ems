@@ -7,6 +7,7 @@ import AdminPage from './pages/AdminPage';
 import ShiftRosterNotice from './components/ShiftRosterNotice';
 import PayrollTable from './components/PayrollTable';
 import MaintenanceAlerts from './components/MaintenanceAlerts';
+import AttendanceHistoryPage from './pages/AttendanceHistoryPage';
 import LoginPage from './pages/LoginPage';
 
 const MainApp = () => {
@@ -35,6 +36,7 @@ const MainApp = () => {
         )}
 
         {activeTab === 'employee' && <EmployeeDashboard setActiveTab={setActiveTab} />}
+        {activeTab === 'history' && <AttendanceHistoryPage />}
         {activeTab === 'shifts' && <ShiftRosterNotice />}
         {activeTab === 'payroll' && <PayrollTable />}
         {activeTab === 'maintenance' && <MaintenanceAlerts />}

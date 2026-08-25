@@ -1,7 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import ProfileModal from './ProfileModal';
-import { Cpu, Shield, ShieldAlert, LogOut, User, KeyRound } from 'lucide-react';
+import { ShieldAlert, LogOut, User, Calendar, History } from 'lucide-react';
 
 const Navbar = ({ activeTab, setActiveTab }) => {
   const { user, logout } = useContext(AuthContext);
@@ -14,23 +14,27 @@ const Navbar = ({ activeTab, setActiveTab }) => {
       padding: '0.8rem 2rem',
       display: 'flex',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      justify: 'space-between',
       position: 'sticky',
       top: 0,
       zIndex: 100
     }}>
-      {/* Brand Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+      {/* Official Keltron Brand Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
         <div style={{
           backgroundColor: '#0284c7',
           color: '#fff',
-          padding: '0.5rem',
+          padding: '0.4rem 0.8rem',
           borderRadius: '8px',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center'
+          justify: 'center',
+          boxShadow: '0 0 12px rgba(2, 132, 199, 0.4)',
+          border: '1px solid #38bdf8'
         }}>
-          <Cpu size={24} />
+          <span style={{ fontSize: '1rem', fontWeight: 900, letterSpacing: '1px', fontFamily: 'sans-serif' }}>KELTRON</span>
+          <span style={{ fontSize: '0.55rem', fontWeight: 700, color: '#e0f2fe' }}>കെൽട്രോൺ</span>
         </div>
         <div>
           <h1 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', margin: 0, letterSpacing: '-0.02em' }}>
@@ -44,14 +48,14 @@ const Navbar = ({ activeTab, setActiveTab }) => {
 
       {/* Navigation Tabs */}
       {user && (
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
           {user.role === 'SiteAdmin' && (
             <button
               className={`btn ${activeTab === 'admin' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setActiveTab('admin')}
               style={{ border: '1px solid #6366f1' }}
             >
-              <ShieldAlert size={16} style={{ color: '#818cf8' }} /> Root Admin Portal (/admin)
+              <ShieldAlert size={16} style={{ color: '#818cf8' }} /> Root Admin (/admin)
             </button>
           )}
 
@@ -70,6 +74,12 @@ const Navbar = ({ activeTab, setActiveTab }) => {
                 Weekly Roster Notice
               </button>
               <button
+                className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setActiveTab('history')}
+              >
+                <History size={15} /> Attendance History
+              </button>
+              <button
                 className={`btn ${activeTab === 'payroll' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setActiveTab('payroll')}
               >
@@ -79,7 +89,7 @@ const Navbar = ({ activeTab, setActiveTab }) => {
                 className={`btn ${activeTab === 'maintenance' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setActiveTab('maintenance')}
               >
-                Machine Cleaning Alerts
+                Cleaning Alerts
               </button>
             </>
           )}
@@ -93,10 +103,16 @@ const Navbar = ({ activeTab, setActiveTab }) => {
                 My Punch & Portal
               </button>
               <button
+                className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setActiveTab('history')}
+              >
+                <History size={15} /> My Punching Logs
+              </button>
+              <button
                 className={`btn ${activeTab === 'shifts' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setActiveTab('shifts')}
               >
-                My Weekly Shift Notice
+                My Shift Notice
               </button>
               <button
                 className={`btn ${activeTab === 'payroll' ? 'btn-primary' : 'btn-secondary'}`}

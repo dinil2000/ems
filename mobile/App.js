@@ -10,11 +10,12 @@ import PayrollScreen from './src/screens/PayrollScreen';
 import MaintenanceScreen from './src/screens/MaintenanceScreen';
 import AdminScreen from './src/screens/AdminScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import AttendanceHistoryScreen from './src/screens/AttendanceHistoryScreen';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentScreen, setCurrentScreen] = useState('home'); // 'home', 'notice', 'payroll', 'maintenance', 'admin', 'profile'
+  const [currentScreen, setCurrentScreen] = useState('home'); // 'home', 'notice', 'history', 'payroll', 'maintenance', 'admin', 'profile'
 
   useEffect(() => {
     const checkSession = async () => {
@@ -92,15 +93,22 @@ export default function App() {
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      {/* Persistent Top App Bar with Back & Exit App Buttons */}
+      {/* Top App Bar with Official Keltron Logo, Back & Exit App Buttons */}
       <View style={styles.topAppBar}>
         {currentScreen !== 'home' ? (
           <TouchableOpacity onPress={() => setCurrentScreen('home')} style={styles.appBarBackBtn}>
             <Text style={styles.appBarBackText}>◀ Back to Home</Text>
           </TouchableOpacity>
         ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={{ fontSize: 16, fontWeight: '800', color: '#f8fafc' }}>Keltron MPP EMS</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={styles.logoBadge}>
+              <Text style={styles.logoText}>KELTRON</Text>
+              <Text style={styles.logoSubText}>കെൽട്രോൺ</Text>
+            </View>
+            <View>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: '#f8fafc' }}>Keltron MPP EMS</Text>
+              <Text style={{ fontSize: 10, color: '#06b6d4', fontWeight: '600' }}>Kannur Plant</Text>
+            </View>
           </View>
         )}
 
@@ -117,6 +125,10 @@ export default function App() {
             onLogout={handleLogout}
             onNavigate={(screen) => setCurrentScreen(screen)}
           />
+        )}
+
+        {currentScreen === 'history' && (
+          <AttendanceHistoryScreen user={user} onBack={() => setCurrentScreen('home')} />
         )}
 
         {currentScreen === 'notice' && (
@@ -144,7 +156,7 @@ export default function App() {
         )}
       </View>
 
-      {/* Bottom Navigation Tab Bar (Provides All Web Options & Back Navigation) */}
+      {/* Bottom Navigation Tab Bar (Provides All Options & Back Navigation) */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tabItem, currentScreen === 'home' && styles.tabActive]}
@@ -152,6 +164,14 @@ export default function App() {
         >
           <Text style={styles.tabIcon}>🏠</Text>
           <Text style={[styles.tabText, currentScreen === 'home' && styles.tabTextActive]}>Home</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabItem, currentScreen === 'history' && styles.tabActive]}
+          onPress={() => setCurrentScreen('history')}
+        >
+          <Text style={styles.tabIcon}>📊</Text>
+          <Text style={[styles.tabText, currentScreen === 'history' && styles.tabTextActive]}>Punching</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -222,6 +242,27 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
   },
+  logoBadge: {
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignItems: 'center',
+    justify: 'center',
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+  },
+  logoText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  logoSubText: {
+    color: '#e0f2fe',
+    fontSize: 8,
+    fontWeight: '700',
+  },
   appBarBackBtn: {
     backgroundColor: '#334155',
     paddingHorizontal: 10,
@@ -252,24 +293,24 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#334155',
     paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     justify: 'space-around',
   },
   tabItem: {
     alignItems: 'center',
     justify: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     borderRadius: 8,
   },
   tabActive: {
     backgroundColor: 'rgba(56, 189, 248, 0.15)',
   },
   tabIcon: {
-    fontSize: 18,
+    fontSize: 17,
   },
   tabText: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#94a3b8',
     fontWeight: '600',
     marginTop: 2,

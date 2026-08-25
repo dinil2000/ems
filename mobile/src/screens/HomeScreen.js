@@ -176,10 +176,15 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#38bdf8" />}
     >
-      {/* User Info Bar */}
+      {/* User Info Bar with Keltron Logo Header */}
       <View style={styles.userCard}>
-        <View>
-          <Text style={styles.userName}>{user.employeeProfile?.name || `Token #${user.employeeToken}`}</Text>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <View style={styles.miniLogo}>
+              <Text style={styles.miniLogoText}>KELTRON</Text>
+            </View>
+            <Text style={styles.userName}>{user.employeeProfile?.name || `Token #${user.employeeToken}`}</Text>
+          </View>
           <Text style={styles.userRole}>
             Token #{user.employeeToken} • {user.role === 'SiteAdmin' ? 'ROOT ADMIN' : user.role}
           </Text>
@@ -226,39 +231,31 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
       {/* Navigation Options Grid */}
       <View style={styles.navGrid}>
+        <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('history')}>
+          <Text style={styles.navIcon}>📊</Text>
+          <Text style={styles.navTitle}>Punching Logs</Text>
+          <Text style={styles.navSubtitle}>Monthly Attendance Data</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('notice')}>
           <Text style={styles.navIcon}>📋</Text>
           <Text style={styles.navTitle}>Shift Notice</Text>
           <Text style={styles.navSubtitle}>Unit 1 & 2 Roster Sheets</Text>
         </TouchableOpacity>
+      </View>
 
+      <View style={styles.navGrid}>
         <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('payroll')}>
           <Text style={styles.navIcon}>💰</Text>
           <Text style={styles.navTitle}>Payroll (25th-25th)</Text>
           <Text style={styles.navSubtitle}>View Salary & OT Payslip</Text>
         </TouchableOpacity>
-      </View>
 
-      <View style={styles.navGrid}>
         <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('maintenance')}>
           <Text style={styles.navIcon}>🔧</Text>
           <Text style={styles.navTitle}>Cleaning Alerts</Text>
           <Text style={styles.navSubtitle}>Machine Status & Alerts</Text>
         </TouchableOpacity>
-
-        {user.role === 'SiteAdmin' ? (
-          <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('admin')}>
-            <Text style={styles.navIcon}>🛡️</Text>
-            <Text style={styles.navTitle}>Admin Portal</Text>
-            <Text style={styles.navSubtitle}>Promote/Demote & Edits</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('profile')}>
-            <Text style={styles.navIcon}>👤</Text>
-            <Text style={styles.navTitle}>My Profile</Text>
-            <Text style={styles.navSubtitle}>Profile & Password</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Recent Attendance Card */}
@@ -308,8 +305,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
   },
+  miniLogo: {
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  miniLogoText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '900',
+  },
   userName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#f8fafc',
   },
