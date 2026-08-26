@@ -10,9 +10,11 @@ import {
   RefreshControl,
   Image,
   Linking,
+  Platform,
 } from 'react-native';
 import axios from 'axios';
 import * as Location from 'expo-location';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { getApiUrlList } from '../config/api';
 import { KELTRON_KANNUR_GEOFENCE, calculateDistanceToKeltron, setupGeofenceTracking, sendAutoPunchNotification } from '../utils/geofence';
 
@@ -38,17 +40,39 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     } catch (e) {}
   };
 
+  const requestBatteryOptimization = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        await IntentLauncher.startActivityAsync(
+          IntentLauncher.ActivityAction.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+          { data: 'package:com.keltron.mpp.ems' }
+        );
+      } catch (e) {
+        try {
+          await IntentLauncher.startActivityAsync(
+            IntentLauncher.ActivityAction.IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+          );
+        } catch (err) {
+          Linking.openSettings();
+        }
+      }
+    } else {
+      Linking.openSettings();
+    }
+  };
+
   const requestBgPerm = async () => {
     try {
       const { status } = await Location.requestBackgroundPermissionsAsync();
       if (status === 'granted') {
         setHasBgPermission(true);
         await setupGeofenceTracking();
+        await requestBatteryOptimization();
         Alert.alert('Background Location Enabled', 'Automated Punch In/Out will now run automatically in the background even when app is closed!');
       } else {
         Alert.alert(
           'Background Permission Required',
-          'To auto-punch without opening the app, please go to your phone Settings > Apps > Keltron MPP EMS > Permissions > Location and select "Allow all the time".'
+          'To auto-punch without opening the app, please select "Allow all the time" in Location settings.'
         );
       }
     } catch (e) {
@@ -61,9 +85,10 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     setupGeofenceTracking().catch(e => console.log('Geofence setup note:', e.message));
   }, []);
 
-  // Live Location Watcher for Real-Time Automated 700m Punch In / Punch Out
+  // Live Location Watcher with Hysteresis & Accuracy Filtering
   useEffect(() => {
     let subscriber = null;
+    let outsideCounter = 0;
 
     const startLocationWatch = async () => {
       try {
@@ -76,10 +101,14 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         subscriber = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.High,
-            timeInterval: 4000,
-            distanceInterval: 5,
+            timeInterval: 5000,
+            distanceInterval: 10,
           },
           (loc) => {
+            const accuracy = loc.coords.accuracy || 100;
+            // Ignore inaccurate GPS jumps (> 75m)
+            if (accuracy > 75) return;
+
             const lat = loc.coords.latitude;
             const lng = loc.coords.longitude;
             setUserLocation({ latitude: lat, longitude: lng });
@@ -88,30 +117,38 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             setDistanceMeters(dist);
 
             const isInside700m = dist <= KELTRON_KANNUR_GEOFENCE.radius;
+            const isOutside850m = dist >= (KELTRON_KANNUR_GEOFENCE.exitRadius || 850);
 
             if (isInside700m) {
               setLocationStatus(`📍 Inside 700m Plant Boundary (${dist}m)`);
+              outsideCounter = 0;
+            } else if (isOutside850m) {
+              setLocationStatus(`📍 Outside Plant Perimeter (${dist}m)`);
             } else {
-              setLocationStatus(`📍 ${dist}m from Plant (700m Zone Active)`);
+              setLocationStatus(`📍 Buffer Zone (${dist}m from Plant)`);
             }
 
-            // Real-Time Automated Punch In / Out Trigger for 700m Boundary
+            // Real-Time Automated Punch In / Out Trigger with Hysteresis
             if (autoPunchEnabled) {
               const isPunchedIn = attendance && (attendance.status === 'In Progress' || attendance.status === 'Pending Late Approval' || (attendance.punchIn && !attendance.punchOut));
 
               // ENTER 700m boundary -> Auto Punch In
-              if (isInside700m && prevInsideRef.current === false && !isPunchedIn) {
+              if (isInside700m && !isPunchedIn && prevInsideRef.current !== true) {
                 setAutoPunchMessage(`⚡ Auto-Punched In! Entered 700m perimeter (${dist}m)`);
                 handleAutoPunchIn(lat, lng);
+                prevInsideRef.current = true;
               }
-              // EXIT 700m boundary -> Auto Punch Out
-              else if (!isInside700m && prevInsideRef.current === true && isPunchedIn) {
-                setAutoPunchMessage(`⚡ Auto-Punched Out! Left 700m perimeter (${dist}m)`);
-                handleAutoPunchOut(lat, lng);
+              // EXIT past 850m boundary with debouncing (3 consecutive checks) -> Auto Punch Out
+              else if (isOutside850m && isPunchedIn) {
+                outsideCounter += 1;
+                if (outsideCounter >= 3 && prevInsideRef.current !== false) {
+                  setAutoPunchMessage(`⚡ Auto-Punched Out! Left plant perimeter (${dist}m)`);
+                  handleAutoPunchOut(lat, lng);
+                  prevInsideRef.current = false;
+                  outsideCounter = 0;
+                }
               }
             }
-
-            prevInsideRef.current = isInside700m;
           }
         );
       } catch (err) {
@@ -377,9 +414,9 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           <Text style={styles.rulesNoteText}>
             ⏱ Working Hours = 7h 30m (30m lunch deducted) • OT after 8h 30m presence (30m grace) • Billing Cycle: 26th-25th
           </Text>
-          <TouchableOpacity onPress={() => Linking.openSettings()} style={{ marginTop: 6, alignItems: 'center' }}>
+          <TouchableOpacity onPress={requestBatteryOptimization} style={{ marginTop: 6, alignItems: 'center' }}>
             <Text style={{ fontSize: 10, color: '#38bdf8', fontWeight: '700' }}>
-              ⚙️ Phone Settings (Ensure "Allow All The Time" & "Unrestricted Battery")
+              ⚙️ Tap to Enable 24/7 Background Running ("Allow Background Power")
             </Text>
           </TouchableOpacity>
         </View>

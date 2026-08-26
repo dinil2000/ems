@@ -1,18 +1,13 @@
 // ========================================================================
-// Keltron MPP EMS — Background Geofence Auto-Punch Engine
+// Keltron MPP EMS — Industrial-Grade Background Geofence & Auto-Punch Engine
 // ========================================================================
-// This file defines TWO TaskManager background tasks at the TOP LEVEL:
-//   1. GEOFENCE TASK — fires on native Android geofence enter/exit events
-//   2. BACKGROUND LOCATION SERVICE — persistent foreground service that
-//      monitors GPS every 10 seconds with killServiceOnDestroy: false
-//      so it survives app close, swipe-away, and screen lock.
-//
-// Both tasks call performBackgroundAutoPunch() which:
-//   - Reads user credentials from AsyncStorage (works headlessly)
-//   - Checks server for current shift status before punching
-//   - Rate-limits to prevent duplicate punches within 120 seconds
-//   - Sends HIGH-PRIORITY local push notifications for auto-punch ONLY
-//   - Manual punches from the UI NEVER trigger notifications
+// Features:
+// 1. Dual-Boundary Hysteresis (Enter <= 700m, Exit >= 850m) to eliminate false exits indoors
+// 2. GPS Accuracy Filtering (ignores low-accuracy/bouncing readings > 75m)
+// 3. Debounced Exit Confirmation (requires 3 consecutive outside readings over 60s)
+// 4. Rate-Limiting & Minimum Shift Cooldown (prevents rapid toggle loops)
+// 5. High-Priority Push Notifications for Auto-Punch ONLY
+// 6. Persistent Android Foreground Location Service (killServiceOnDestroy: false)
 // ========================================================================
 
 import * as Location from 'expo-location';
@@ -22,12 +17,13 @@ import { Platform } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ── Company Geofence Coordinates ────────────────────────────────────────
+// ── Company Geofence Coordinates & Hysteresis Boundaries ──────────────
 export const KELTRON_KANNUR_GEOFENCE = {
   identifier: 'KELTRON_KANNUR_PLANT_700M',
   latitude: 11.983878,
   longitude: 75.374253,
-  radius: 700, // 700-meter perimeter around factory
+  radius: 700,         // Enter threshold (within 700 meters)
+  exitRadius: 850,     // Exit threshold (must be past 850 meters with hysteresis)
   notifyOnEnter: true,
   notifyOnExit: true,
 };
@@ -45,7 +41,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// ── Android Notification Channel (HIGH importance) ──────────────────────
+// ── Android Notification Channel (HIGH Importance + Lock Screen) ────────
 export const setupNotificationChannel = async () => {
   if (Platform.OS === 'android') {
     try {
@@ -59,7 +55,7 @@ export const setupNotificationChannel = async () => {
         enableLights: true,
         enableVibrate: true,
         showBadge: true,
-        lockscreenVisibility: 1, // PUBLIC — show on lock screen
+        lockscreenVisibility: 1, // PUBLIC — visible on lock screen
       });
     } catch (e) {
       console.log('[Geofence] Channel setup:', e.message);
@@ -68,7 +64,6 @@ export const setupNotificationChannel = async () => {
 };
 
 // ── Send Local Push Notification (AUTO-PUNCH ONLY) ──────────────────────
-// Manual punches from the UI NEVER call this function.
 export const sendAutoPunchNotification = async (title, body) => {
   try {
     await setupNotificationChannel();
@@ -81,10 +76,10 @@ export const sendAutoPunchNotification = async (title, body) => {
         channelId: NOTIFICATION_CHANNEL_ID,
         data: { source: 'keltron_geofence_autopunch' },
       },
-      trigger: null, // immediate delivery
+      trigger: null, // deliver immediately
     });
   } catch (err) {
-    console.error('[Geofence] Notification error:', err.message);
+    console.error('[Geofence] Notification trigger error:', err.message);
   }
 };
 
@@ -101,21 +96,19 @@ export const calculateDistanceToKeltron = (lat, lng) => {
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };
 
-// ── HTTP POST with retry (for unreliable mobile networks) ───────────────
+// ── HTTP POST with retry ────────────────────────────────────────────────
 const postWithRetry = async (url, data, retries = 2) => {
   for (let i = 0; i <= retries; i++) {
     try {
       return await axios.post(url, data, { timeout: 12000 });
     } catch (err) {
       if (i === retries) throw err;
-      await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
+      await new Promise(r => setTimeout(r, 2000));
     }
   }
 };
 
-// ── Core Background Auto-Punch Engine ───────────────────────────────────
-// Called by BOTH the geofence task and the location service task.
-// Works even when the app is completely closed (headless JS execution).
+// ── Core Background Auto-Punch Engine with Debouncing & Cooldown ────────
 export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
   try {
     const userStr = await AsyncStorage.getItem('ems_user');
@@ -126,14 +119,16 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
     const tokenNo = user.employeeToken;
     if (!tokenNo) return;
 
-    // Rate-limit: prevent duplicate auto-punch calls within 120 seconds
-    const lastAction = await AsyncStorage.getItem('ems_last_auto_action');
-    const lastTime = await AsyncStorage.getItem('ems_last_auto_time');
     const now = Date.now();
-    const actionKey = isPunchIn ? 'IN' : 'OUT';
+    const lastAction = await AsyncStorage.getItem('ems_last_auto_action');
+    const lastTimeStr = await AsyncStorage.getItem('ems_last_auto_time');
+    const lastTime = lastTimeStr ? parseInt(lastTimeStr) : 0;
+    const timeSinceLastAction = now - lastTime;
 
-    if (lastAction === actionKey && lastTime && (now - parseInt(lastTime)) < 120000) {
-      return; // same action within 2 minutes, skip
+    // Minimum cooldown between opposite actions (3 minutes) to prevent rapid bouncing
+    if (lastAction && timeSinceLastAction < 180000) {
+      console.log(`[AUTO-PUNCH] Cooldown active (${Math.round(timeSinceLastAction / 1000)}s / 180s). Skipping.`);
+      return;
     }
 
     // Check live shift status from server
@@ -148,7 +143,6 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
           (latest.punchIn && !latest.punchOut);
       }
     } catch (e) {
-      // Network failed — fallback to local state
       const localState = await AsyncStorage.getItem('ems_is_on_shift');
       isCurrentlyOnShift = localState === 'true';
     }
@@ -156,9 +150,13 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     if (isPunchIn) {
-      if (isCurrentlyOnShift) return; // already on shift
+      if (isCurrentlyOnShift) {
+        // Reset outside counter since user is confirmed inside & on-shift
+        await AsyncStorage.setItem('ems_outside_consecutive_count', '0');
+        return;
+      }
 
-      console.log(`[AUTO-PUNCH] Entering 700m zone → Punch IN Token #${tokenNo}`);
+      console.log(`📍 [AUTO-PUNCH] Inside 700m zone → Punch IN for Token #${tokenNo}`);
       const res = await postWithRetry(`${apiUrl}/attendance/punch-in`, {
         tokenNo,
         latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
@@ -171,6 +169,7 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
         ['ems_last_auto_action', 'IN'],
         ['ems_last_auto_time', String(now)],
         ['ems_is_on_shift', 'true'],
+        ['ems_outside_consecutive_count', '0'],
       ]);
 
       await sendAutoPunchNotification(
@@ -178,21 +177,24 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
         `Token #${tokenNo} punched in at ${timeStr} — entered Keltron Kannur Plant perimeter.`
       );
     } else {
-      if (!isCurrentlyOnShift) return; // not on shift
+      if (!isCurrentlyOnShift) {
+        return; // already off-shift
+      }
 
-      console.log(`[AUTO-PUNCH] Exiting 700m zone → Punch OUT Token #${tokenNo}`);
+      console.log(`👋 [AUTO-PUNCH] Exited past 850m zone → Punch OUT for Token #${tokenNo}`);
       const res = await postWithRetry(`${apiUrl}/attendance/punch-out`, {
         tokenNo,
         latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
         longitude: lng || KELTRON_KANNUR_GEOFENCE.longitude,
         isGeofencedAutoPunch: true,
-        locationName: 'Keltron Kannur (Auto 700m Geofence)',
+        locationName: 'Keltron Kannur (Auto Exited Perimeter)',
       });
 
       await AsyncStorage.multiSet([
         ['ems_last_auto_action', 'OUT'],
         ['ems_last_auto_time', String(now)],
         ['ems_is_on_shift', 'false'],
+        ['ems_outside_consecutive_count', '0'],
       ]);
 
       const record = res.data?.attendance;
@@ -201,7 +203,7 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
         : 'Shift completed.';
 
       await sendAutoPunchNotification(
-        '🔴 Auto Punched Out (Left 700m)',
+        '🔴 Auto Punched Out (Left Plant)',
         `Token #${tokenNo} punched out at ${timeStr} — left Keltron Plant. ${workedMsg}`
       );
     }
@@ -212,7 +214,6 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
 
 // ════════════════════════════════════════════════════════════════════════
 // TASK 1: Native Android Geofencing (fires on ENTER / EXIT events)
-// MUST be defined at top-level module scope — NOT inside any component
 // ════════════════════════════════════════════════════════════════════════
 TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
   if (error) {
@@ -220,11 +221,18 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
     return;
   }
   try {
-    const { eventType, region } = data;
+    const { eventType } = data;
     if (eventType === Location.GeofencingEventType.Enter) {
       await performBackgroundAutoPunch(true, KELTRON_KANNUR_GEOFENCE.latitude, KELTRON_KANNUR_GEOFENCE.longitude);
     } else if (eventType === Location.GeofencingEventType.Exit) {
-      await performBackgroundAutoPunch(false, KELTRON_KANNUR_GEOFENCE.latitude, KELTRON_KANNUR_GEOFENCE.longitude);
+      // On native exit, verify distance before punching out to avoid boundary bounce
+      const lastLoc = await Location.getLastKnownPositionAsync().catch(() => null);
+      if (lastLoc) {
+        const dist = calculateDistanceToKeltron(lastLoc.coords.latitude, lastLoc.coords.longitude);
+        if (dist >= KELTRON_KANNUR_GEOFENCE.exitRadius) {
+          await performBackgroundAutoPunch(false, lastLoc.coords.latitude, lastLoc.coords.longitude);
+        }
+      }
     }
   } catch (e) {
     console.error('[Geofence Task] Execution error:', e.message);
@@ -233,9 +241,7 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
 
 // ════════════════════════════════════════════════════════════════════════
 // TASK 2: Persistent Foreground Location Service (runs 24/7 even closed)
-// This is the BACKUP that ensures auto-punch works even if Android
-// throttles native geofence events (which happens on many devices).
-// killServiceOnDestroy: false keeps it alive after app swipe-away.
+// Uses Debouncing + Accuracy Filter + Hysteresis
 // ════════════════════════════════════════════════════════════════════════
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   if (error) {
@@ -245,11 +251,32 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   try {
     if (data && data.locations && data.locations.length > 0) {
       const loc = data.locations[data.locations.length - 1];
+      const accuracy = loc.coords.accuracy || 100;
+
+      // Filter out low-accuracy GPS jumps (> 75m accuracy is unreliable indoors)
+      if (accuracy > 75) {
+        return;
+      }
+
       const lat = loc.coords.latitude;
       const lng = loc.coords.longitude;
       const dist = calculateDistanceToKeltron(lat, lng);
-      const isInside = dist <= KELTRON_KANNUR_GEOFENCE.radius;
-      await performBackgroundAutoPunch(isInside, lat, lng);
+
+      if (dist <= KELTRON_KANNUR_GEOFENCE.radius) {
+        // INSIDE 700m -> Reset outside counter and trigger Punch In if off-shift
+        await AsyncStorage.setItem('ems_outside_consecutive_count', '0');
+        await performBackgroundAutoPunch(true, lat, lng);
+      } else if (dist >= KELTRON_KANNUR_GEOFENCE.exitRadius) {
+        // OUTSIDE 850m -> Increment debounced consecutive outside counter
+        const countStr = (await AsyncStorage.getItem('ems_outside_consecutive_count')) || '0';
+        const newCount = parseInt(countStr) + 1;
+        await AsyncStorage.setItem('ems_outside_consecutive_count', String(newCount));
+
+        // Require at least 3 consecutive outside readings (approx 45-60s) before punch-out
+        if (newCount >= 3) {
+          await performBackgroundAutoPunch(false, lat, lng);
+        }
+      }
     }
   } catch (e) {
     console.error('[Location Service] Execution error:', e.message);
@@ -261,70 +288,56 @@ export const setupGeofenceTracking = async () => {
   try {
     await setupNotificationChannel();
 
-    // Request notification permission (Android 13+)
     try {
-      const { status } = await Notifications.requestPermissionsAsync();
-      console.log('[Geofence] Notification permission:', status);
+      await Notifications.requestPermissionsAsync();
     } catch (e) {}
 
-    // Request foreground location permission
     const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
     if (fgStatus !== 'granted') {
       return { success: false, message: 'Foreground location denied.' };
     }
 
-    // Request background location permission ("Allow all the time")
     const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
     if (bgStatus !== 'granted') {
-      return { success: false, message: 'Background location required. Please select "Allow all the time" in Settings → Location.' };
+      return { success: false, message: 'Background location required ("Allow all the time").' };
     }
 
     // ── Start Native Geofencing ─────────────────────────────────────
-    const isGeofenceDefined = await TaskManager.isTaskDefined(GEOFENCE_TASK_NAME);
-    if (isGeofenceDefined) {
-      // Stop any existing geofence first to apply fresh config
+    if (await TaskManager.isTaskDefined(GEOFENCE_TASK_NAME)) {
       try {
         const isRunning = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK_NAME);
-        if (isRunning) {
-          await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
-        }
+        if (isRunning) await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
       } catch (e) {}
       await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, [KELTRON_KANNUR_GEOFENCE]);
-      console.log('[Geofence] Native geofencing started (700m)');
     }
 
-    // ── Start Persistent Background Location Service ────────────────
-    const isLocDefined = await TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK);
-    if (isLocDefined) {
-      // Stop any existing service first to apply fresh config
+    // ── Start Persistent Background Location Updates ────────────────
+    if (await TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK)) {
       try {
         const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-        if (isRunning) {
-          await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-        }
+        if (isRunning) await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
       } catch (e) {}
 
       await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
         accuracy: Location.Accuracy.High,
-        timeInterval: 10000,       // check every 10 seconds
-        distanceInterval: 5,       // or every 5 meters of movement
-        deferredUpdatesInterval: 10000,
+        timeInterval: 15000,      // check every 15 seconds
+        distanceInterval: 10,      // or 10 meters movement
+        deferredUpdatesInterval: 15000,
         pausesUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
         activityType: Location.ActivityType.OtherNavigation,
         foregroundService: {
           notificationTitle: '📍 Keltron EMS Geofence Active',
-          notificationBody: 'Auto Punch In/Out monitoring (700m factory zone). Do not disable.',
+          notificationBody: 'Automated 700m attendance monitoring active in background.',
           notificationColor: '#0284c7',
-          killServiceOnDestroy: false, // ← KEY: keeps service alive when app is closed!
+          killServiceOnDestroy: false,
         },
       });
-      console.log('[Geofence] Background location service started (killServiceOnDestroy=false)');
     }
 
     return {
       success: true,
-      message: '📍 Background Auto-Punch Active (works when app is closed)',
+      message: '📍 Background Auto-Punch Active (700m Plant Zone)',
     };
   } catch (err) {
     console.error('[Geofence] Setup error:', err);
