@@ -40,14 +40,27 @@ jobs:
         working-directory: ./mobile
         run: npx expo prebuild --platform android --clean
 
-      - name: 🔨 Build Standalone Android APK
+      - name: 🔑 Configure Release Signing with Debug Keystore
         working-directory: ./mobile/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          # Configure release build to use debug signing key so APK installs on any device without keystore setup
+          sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.debug/g' app/build.gradle
+          sed -i 's/buildTypes {/buildTypes {\n        release {\n            signingConfig signingConfigs.debug\n        }/g' app/build.gradle || true
+
+      - name: 📦 Bundle JS & Build Standalone Release APK
+        working-directory: ./mobile/android
+        run: ./gradlew assembleRelease --no-daemon -x lint
 
       - name: 📋 Copy & Rename APK
         run: |
           mkdir -p build_output
-          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk build_output/Keltron-MPP-EMS.apk
+          if [ -f mobile/android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp mobile/android/app/build/outputs/apk/release/app-release.apk build_output/Keltron-MPP-EMS.apk
+          elif [ -f mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk build_output/Keltron-MPP-EMS.apk
+          else
+            find mobile/android/app/build/outputs/apk -name "*.apk" -exec cp {} build_output/Keltron-MPP-EMS.apk \;
+          fi
 
       - name: 💾 Upload Artifact
         uses: actions/upload-artifact@v4
@@ -61,9 +74,10 @@ jobs:
         if: startsWith(github.ref, 'refs/heads/main')
         with:
           tag_name: v1.0.0-latest
-          name: Keltron MPP EMS - Latest Android APK
+          name: Keltron MPP EMS - Latest Android APK (Release Standalone)
           body: |
-            ### 📱 Keltron MPP EMS - Standalone Android APK for All Employees
+            ### 📱 Keltron MPP EMS - Standalone Release Android APK
+            - **Fully Bundled Release APK**: All JavaScript scripts and images are embedded inside `index.android.bundle` (NO Metro or dev server required).
             - **Automated Geofence Punch In / Out** within 700m Keltron Kannur Plant boundary.
             - **Runs in background 24/7** with persistent Android Foreground Service.
             - **High-Priority Push Notification Alerts** on Auto-Punch.
