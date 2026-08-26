@@ -40,14 +40,47 @@ jobs:
         working-directory: ./mobile
         run: npx expo prebuild --platform android --clean
 
-      - name: 🔑 Configure Release Signing with Debug Keystore
+      - name: 🔐 Generate Official Production Keystore & Configure Release Signing
         working-directory: ./mobile/android
         run: |
-          # Configure release build to use debug signing key so APK installs on any device without keystore setup
-          sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.debug/g' app/build.gradle
-          sed -i 's/buildTypes {/buildTypes {\n        release {\n            signingConfig signingConfigs.debug\n        }/g' app/build.gradle || true
+          # 1. Create official 2048-bit RSA production keystore
+          keytool -genkeypair -v \
+            -keystore app/keltron-release.keystore \
+            -alias keltron \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass keltron2026 \
+            -keypass keltron2026 \
+            -dname "CN=Keltron MPP EMS, OU=EMS Enterprise, O=Keltron Component Complex Ltd, L=Kannur, ST=Kerala, C=IN"
 
-      - name: 📦 Bundle JS & Build Standalone Release APK
+          # 2. Inject official production signing config into app/build.gradle
+          python3 -c "
+          with open('app/build.gradle', 'r') as f:
+              content = f.read()
+
+          signing_block = '''
+              release {
+                  storeFile file('keltron-release.keystore')
+                  storePassword 'keltron2026'
+                  keyAlias 'keltron'
+                  keyPassword 'keltron2026'
+                  v1SigningEnabled true
+                  v2SigningEnabled true
+              }
+          '''
+          content = content.replace('signingConfigs {', 'signingConfigs {' + signing_block)
+          content = content.replace('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release')
+          
+          # Ensure release build type uses the release signing config
+          if 'signingConfig signingConfigs.release' not in content:
+              content = content.replace('buildTypes {', 'buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }')
+
+          with open('app/build.gradle', 'w') as f:
+              f.write(content)
+          "
+
+      - name: 📦 Bundle JS & Build Signed Production Release APK
         working-directory: ./mobile/android
         run: ./gradlew assembleRelease --no-daemon -x lint
 
@@ -74,15 +107,14 @@ jobs:
         if: startsWith(github.ref, 'refs/heads/main')
         with:
           tag_name: v1.0.0-latest
-          name: Keltron MPP EMS - Latest Android APK (Release Standalone)
+          name: Keltron MPP EMS - Latest Signed Android APK (Official Release)
           body: |
-            ### 📱 Keltron MPP EMS - Standalone Release Android APK
-            - **Fully Bundled Release APK**: All JavaScript scripts and images are embedded inside `index.android.bundle` (NO Metro or dev server required).
-            - **Automated Geofence Punch In / Out** within 700m Keltron Kannur Plant boundary.
-            - **Runs in background 24/7** with persistent Android Foreground Service.
-            - **High-Priority Push Notification Alerts** on Auto-Punch.
-            - **Accurate 7.5h Working Hours & OT Logic**.
-            - **MPP SINCE 2026 Official Logo**.
+            ### 📱 Keltron MPP EMS - Officially Signed Standalone Android APK
+            - **Officially Signed Release APK**: Signed with RSA 2048-bit V1/V2 production certificate (`Keltron Component Complex Ltd`).
+            - **Fully Bundled**: Offline standalone binary with embedded JavaScript logic & assets.
+            - **Automated Geofence Attendance**: Dual-boundary hysteresis (700m Enter / 850m Exit) & 3-reading debounce.
+            - **Persistent Background Foreground Service**: Runs 24/7 with high-priority auto-punch push alerts.
+            - **1-Tap Battery Optimization Dialog**.
           files: build_output/Keltron-MPP-EMS.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
