@@ -13,7 +13,7 @@ import {
 import axios from 'axios';
 import * as Location from 'expo-location';
 import { getApiUrlList } from '../config/api';
-import { KELTRON_KANNUR_GEOFENCE, calculateDistanceToKeltron, setupGeofenceTracking } from '../utils/geofence';
+import { KELTRON_KANNUR_GEOFENCE, calculateDistanceToKeltron, setupGeofenceTracking, sendAutoPunchNotification } from '../utils/geofence';
 
 export default function HomeScreen({ user, onLogout, onNavigate }) {
   const [clockTime, setClockTime] = useState(new Date().toLocaleTimeString());
@@ -174,6 +174,11 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             locationName: 'Keltron Kannur Plant (Inside 700m Geofence)'
           }, { timeout: 6000 });
           if (res.data) {
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            await sendAutoPunchNotification(
+              '🟢 Auto Punched In (700m Plant Zone)',
+              `Token #${user.employeeToken} automatically punched in at ${timeStr} upon entering Keltron Kannur Plant.`
+            );
             Alert.alert('⚡ Automated Punch In', 'You entered the 700m Keltron Kannur plant perimeter!');
             await fetchStatus();
             break;
@@ -196,6 +201,11 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             locationName: 'Keltron Kannur Plant (Exited 700m Geofence)'
           }, { timeout: 6000 });
           if (res.data) {
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            await sendAutoPunchNotification(
+              '🔴 Auto Punched Out (Left 700m Zone)',
+              `Token #${user.employeeToken} automatically punched out at ${timeStr} upon leaving Keltron Kannur Plant.`
+            );
             Alert.alert('⚡ Automated Punch Out', 'You left the 700m Keltron Kannur plant perimeter!');
             await fetchStatus();
             break;
