@@ -9,6 +9,7 @@ import {
   ScrollView,
   RefreshControl,
   Image,
+  Linking,
 } from 'react-native';
 import axios from 'axios';
 import * as Location from 'expo-location';
@@ -376,6 +377,11 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           <Text style={styles.rulesNoteText}>
             ⏱ Working Hours = 7h 30m (30m lunch deducted) • OT after 8h 30m presence (30m grace) • Billing Cycle: 26th-25th
           </Text>
+          <TouchableOpacity onPress={() => Linking.openSettings()} style={{ marginTop: 6, alignItems: 'center' }}>
+            <Text style={{ fontSize: 10, color: '#38bdf8', fontWeight: '700' }}>
+              ⚙️ Phone Settings (Ensure "Allow All The Time" & "Unrestricted Battery")
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
