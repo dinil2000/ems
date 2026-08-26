@@ -19,6 +19,7 @@
     "expo-notifications": "~0.28.19",
     "expo-status-bar": "~1.12.1",
     "expo-task-manager": "~11.8.2",
+    "keltron-mpp-ems": "file:..",
     "lodash": "^4.17.21",
     "lodash.throttle": "^4.1.1",
     "lucide-react-native": "^0.475.0",

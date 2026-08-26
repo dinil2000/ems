@@ -34,7 +34,7 @@ jobs:
 
       - name: 📦 Install Mobile Dependencies
         working-directory: ./mobile
-        run: npm ci
+        run: npm install
 
       - name: ⚙️ Generate Native Android Code (Expo Prebuild)
         working-directory: ./mobile
