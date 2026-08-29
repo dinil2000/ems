@@ -7,7 +7,8 @@
 // background service silently fails and auto-punch doesn't work.
 // ========================================================================
 
-// 1. Register all background tasks FIRST (before React loads)
+// 1. Register all background tasks & shift alarm managers FIRST (before React loads)
+import './src/utils/shiftAlarmManager';
 import './src/utils/geofence';
 
 // 2. Now register the React root component

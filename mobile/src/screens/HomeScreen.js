@@ -11,12 +11,26 @@ import {
   Image,
   Linking,
   Platform,
+  Modal,
 } from 'react-native';
 import axios from 'axios';
 import * as Location from 'expo-location';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { getApiUrlList } from '../config/api';
-import { KELTRON_KANNUR_GEOFENCE, calculateDistanceToKeltron, setupGeofenceTracking, sendAutoPunchNotification } from '../utils/geofence';
+import {
+  KELTRON_KANNUR_GEOFENCE,
+  calculateDistanceToKeltron,
+  setupGeofenceTracking,
+  sendAutoPunchNotification,
+} from '../utils/geofence';
+import {
+  SHIFT_PRESETS,
+  getActiveShift,
+  setActiveShift,
+  evaluateShiftWindow,
+  syncAlarmState,
+  scheduleDailyShiftAlarms,
+} from '../utils/shiftAlarmManager';
 
 export default function HomeScreen({ user, onLogout, onNavigate }) {
   const [clockTime, setClockTime] = useState(new Date().toLocaleTimeString());
@@ -30,6 +44,11 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
   const [autoPunchEnabled, setAutoPunchEnabled] = useState(true);
   const [autoPunchMessage, setAutoPunchMessage] = useState('');
   const [hasBgPermission, setHasBgPermission] = useState(true);
+
+  // Shift & Alarm Manager state
+  const [activeShift, setActiveShiftState] = useState(SHIFT_PRESETS[0]);
+  const [shiftEvaluation, setShiftEvaluation] = useState(null);
+  const [shiftModalVisible, setShiftModalVisible] = useState(false);
 
   const prevInsideRef = useRef(null);
 
@@ -80,10 +99,37 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     }
   };
 
+  // Clock & Alarm evaluation tick
   useEffect(() => {
-    checkBgPermission();
-    setupGeofenceTracking().catch(e => console.log('Geofence setup note:', e.message));
+    const timer = setInterval(() => {
+      setClockTime(new Date().toLocaleTimeString());
+      if (activeShift) {
+        const isCurrentlyOnShift = attendance && (attendance.status === 'In Progress' || attendance.status === 'Pending Late Approval' || (attendance.punchIn && !attendance.punchOut));
+        setShiftEvaluation(evaluateShiftWindow(activeShift, !!isCurrentlyOnShift));
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [activeShift, attendance]);
+
+  useEffect(() => {
+    const init = async () => {
+      checkBgPermission();
+      const currentShift = await getActiveShift();
+      setActiveShiftState(currentShift);
+      await setupGeofenceTracking().catch(e => console.log('Geofence setup note:', e.message));
+    };
+    init();
   }, []);
+
+  const handleSelectShift = async (shift) => {
+    setActiveShiftState(shift);
+    setShiftModalVisible(false);
+    await setActiveShift(shift.id);
+    const isCurrentlyOnShift = attendance && (attendance.status === 'In Progress' || attendance.status === 'Pending Late Approval' || (attendance.punchIn && !attendance.punchOut));
+    const evalResult = await syncAlarmState(!!isCurrentlyOnShift);
+    setShiftEvaluation(evalResult);
+    Alert.alert('Shift Updated', `Active Shift set to ${shift.name} (${shift.label}). Alarm windows updated!`);
+  };
 
   // Live Location Watcher with Hysteresis & Accuracy Filtering
   useEffect(() => {
@@ -172,14 +218,13 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           if (res.data && res.data.length > 0) {
             setRecentRecords(res.data.slice(0, 5));
             const latest = res.data[0];
-            if (latest.status === 'In Progress' || latest.status === 'Pending Late Approval' || (latest.punchIn && !latest.punchOut)) {
-              setAttendance(latest);
-            } else {
-              setAttendance(latest);
-            }
+            setAttendance(latest);
+            const isCurrentlyOnShift = latest.status === 'In Progress' || latest.status === 'Pending Late Approval' || (latest.punchIn && !latest.punchOut);
+            await syncAlarmState(!!isCurrentlyOnShift);
           } else {
             setAttendance(null);
             setRecentRecords([]);
+            await syncAlarmState(false);
           }
           break;
         } catch (e) {}
@@ -217,6 +262,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
               '🟢 Auto Punched In (700m Plant Zone)',
               `Token #${user.employeeToken} automatically punched in at ${timeStr} upon entering Keltron Kannur Plant.`
             );
+            await syncAlarmState(true);
             Alert.alert('⚡ Automated Punch In', 'You entered the 700m Keltron Kannur plant perimeter!');
             await fetchStatus();
             break;
@@ -244,6 +290,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
               '🔴 Auto Punched Out (Left 700m Zone)',
               `Token #${user.employeeToken} automatically punched out at ${timeStr} upon leaving Keltron Kannur Plant.`
             );
+            await syncAlarmState(false);
             Alert.alert('⚡ Automated Punch Out', 'You left the 700m Keltron Kannur plant perimeter!');
             await fetchStatus();
             break;
@@ -277,6 +324,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
       if (res) {
         Alert.alert('Punch In Success', res.data.message);
+        await syncAlarmState(true);
         await fetchStatus();
       } else {
         Alert.alert('Error', 'Unable to connect to server.');
@@ -312,6 +360,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
       if (res) {
         Alert.alert('Punch Out Success', res.data.message);
+        await syncAlarmState(false);
         await fetchStatus();
       } else {
         Alert.alert('Error', 'Unable to connect to server.');
@@ -359,6 +408,42 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           </Text>
         </TouchableOpacity>
       )}
+
+      {/* Smart Shift Alarm & Auto-Punch Scheduler Widget */}
+      <View style={styles.alarmCard}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ fontSize: 16, marginRight: 6 }}>⏰</Text>
+            <Text style={styles.alarmCardTitle}>SHIFT ALARM SCHEDULER</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.shiftChangeBtn}
+            onPress={() => setShiftModalVisible(true)}
+          >
+            <Text style={styles.shiftChangeText}>{activeShift?.name} ▾</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.alarmShiftDetails}>
+          <Text style={styles.alarmShiftTime}>
+            Shift: <Text style={{ color: '#38bdf8', fontWeight: '800' }}>{activeShift?.label}</Text>
+          </Text>
+          <Text style={styles.alarmWindowsText}>
+            In: {activeShift?.inWindowLabel} • Out: {activeShift?.outWindowLabel}
+          </Text>
+        </View>
+
+        {shiftEvaluation && (
+          <View style={[styles.alarmStatusBadge, { borderColor: shiftEvaluation.color, backgroundColor: `${shiftEvaluation.color}18` }]}>
+            <Text style={[styles.alarmBadgeText, { color: shiftEvaluation.color }]}>
+              {shiftEvaluation.badge}
+            </Text>
+            <Text style={styles.alarmDescText}>
+              {shiftEvaluation.description}
+            </Text>
+          </View>
+        )}
+      </View>
 
       {/* Digital Clock & 700m Automated Geofence Punch Widget */}
       <View style={styles.clockCard}>
@@ -486,6 +571,56 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           <Text style={styles.emptyNote}>No attendance punch logs recorded yet.</Text>
         )}
       </View>
+
+      {/* Shift Selector Modal */}
+      <Modal
+        visible={shiftModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShiftModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Your Working Shift</Text>
+            <Text style={styles.modalSub}>
+              Alarm Manager will wake up for Punch-In & Punch-Out during the shift windows.
+            </Text>
+
+            {SHIFT_PRESETS.map((s) => (
+              <TouchableOpacity
+                key={s.id}
+                style={[
+                  styles.shiftOptionCard,
+                  activeShift?.id === s.id && styles.shiftOptionCardActive,
+                ]}
+                onPress={() => handleSelectShift(s)}
+              >
+                <View>
+                  <Text style={[styles.shiftOptionName, activeShift?.id === s.id && { color: '#38bdf8' }]}>
+                    {s.name}
+                  </Text>
+                  <Text style={styles.shiftOptionTime}>
+                    {s.label}
+                  </Text>
+                  <Text style={styles.shiftOptionWindow}>
+                    Window: In ({s.inWindowLabel}) • Out ({s.outWindowLabel})
+                  </Text>
+                </View>
+                {activeShift?.id === s.id && (
+                  <Text style={{ fontSize: 18, color: '#38bdf8' }}>✓</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setShiftModalVisible(false)}
+            >
+              <Text style={styles.modalCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -554,6 +689,63 @@ const styles = StyleSheet.create({
     color: '#fde68a',
     fontSize: 11,
     lineHeight: 15,
+  },
+  alarmCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  alarmCardTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#38bdf8',
+    letterSpacing: 0.5,
+  },
+  shiftChangeBtn: {
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#0284c7',
+  },
+  shiftChangeText: {
+    color: '#38bdf8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  alarmShiftDetails: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  alarmShiftTime: {
+    fontSize: 13,
+    color: '#f8fafc',
+    fontWeight: '600',
+  },
+  alarmWindowsText: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  alarmStatusBadge: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 4,
+  },
+  alarmBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 3,
+  },
+  alarmDescText: {
+    fontSize: 10.5,
+    color: '#cbd5e1',
+    lineHeight: 14,
   },
   clockCard: {
     backgroundColor: '#1e293b',
@@ -770,5 +962,74 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     paddingVertical: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#f8fafc',
+    marginBottom: 4,
+  },
+  modalSub: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginBottom: 16,
+    lineHeight: 16,
+  },
+  shiftOptionCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  shiftOptionCardActive: {
+    borderColor: '#0284c7',
+    backgroundColor: '#0c1b33',
+  },
+  shiftOptionName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  shiftOptionTime: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    marginTop: 2,
+  },
+  shiftOptionWindow: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    marginTop: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#334155',
+    borderRadius: 8,
+  },
+  modalCloseText: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

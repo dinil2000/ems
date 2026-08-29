@@ -2,12 +2,13 @@
 // Keltron MPP EMS — Industrial-Grade Background Geofence & Auto-Punch Engine
 // ========================================================================
 // Features:
-// 1. Dual-Boundary Hysteresis (Enter <= 700m, Exit >= 850m) to eliminate false exits indoors
-// 2. GPS Accuracy Filtering (ignores low-accuracy/bouncing readings > 75m)
-// 3. Debounced Exit Confirmation (requires 3 consecutive outside readings over 60s)
-// 4. Rate-Limiting & Minimum Shift Cooldown (prevents rapid toggle loops)
-// 5. High-Priority Push Notifications for Auto-Punch ONLY
-// 6. Persistent Android Foreground Location Service (killServiceOnDestroy: false)
+// 1. Smart Shift Alarm & Window Management (6:30-7:30 AM Punch In, 3:00 PM Punch Out)
+// 2. Dual-Boundary Hysteresis (Enter <= 700m, Exit >= 850m) to eliminate false exits indoors
+// 3. GPS Accuracy Filtering (ignores low-accuracy/bouncing readings > 75m)
+// 4. Debounced Exit Confirmation (requires 3 consecutive outside readings over 60s)
+// 5. Rate-Limiting & Minimum Shift Cooldown (prevents rapid toggle loops)
+// 6. High-Priority Push Notifications for Auto-Punch ONLY
+// 7. Dynamic GPS Sleep Mode (completely stops GPS while working & off-shift to save 100% battery)
 // ========================================================================
 
 import * as Location from 'expo-location';
@@ -16,6 +17,13 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  syncAlarmState,
+  scheduleDailyShiftAlarms,
+  getActiveShift,
+  evaluateShiftWindow,
+  BACKGROUND_LOCATION_TASK,
+} from './shiftAlarmManager';
 
 // ── Company Geofence Coordinates & Hysteresis Boundaries ──────────────
 export const KELTRON_KANNUR_GEOFENCE = {
@@ -29,7 +37,6 @@ export const KELTRON_KANNUR_GEOFENCE = {
 };
 
 export const GEOFENCE_TASK_NAME = 'KELTRON_KANNUR_AUTOMATED_PUNCH_GEOFENCE';
-export const BACKGROUND_LOCATION_TASK = 'KELTRON_KANNUR_BACKGROUND_LOCATION_SERVICE';
 export const NOTIFICATION_CHANNEL_ID = 'keltron_autopunch_alerts';
 
 // ── Notification Presentation Handler ───────────────────────────────────
@@ -153,6 +160,7 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
       if (isCurrentlyOnShift) {
         // Reset outside counter since user is confirmed inside & on-shift
         await AsyncStorage.setItem('ems_outside_consecutive_count', '0');
+        await syncAlarmState(true);
         return;
       }
 
@@ -176,8 +184,12 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
         '🟢 Auto Punched In (700m Zone)',
         `Token #${tokenNo} punched in at ${timeStr} — entered Keltron Kannur Plant perimeter.`
       );
+
+      // Alarm Manager: Immediately SHUT OFF background GPS & enter battery saver sleep until shift end
+      await syncAlarmState(true);
     } else {
       if (!isCurrentlyOnShift) {
+        await syncAlarmState(false);
         return; // already off-shift
       }
 
@@ -206,6 +218,9 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
         '🔴 Auto Punched Out (Left Plant)',
         `Token #${tokenNo} punched out at ${timeStr} — left Keltron Plant. ${workedMsg}`
       );
+
+      // Alarm Manager: Immediately SHUT OFF background GPS until next morning window
+      await syncAlarmState(false);
     }
   } catch (err) {
     console.error('[AUTO-PUNCH] Error:', err.message);
@@ -240,8 +255,8 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
 });
 
 // ════════════════════════════════════════════════════════════════════════
-// TASK 2: Persistent Foreground Location Service (runs 24/7 even closed)
-// Uses Debouncing + Accuracy Filter + Hysteresis
+// TASK 2: Persistent Foreground Location Service (Active Attendance Windows)
+// Uses Debouncing + Accuracy Filter + Hysteresis + Window Guard
 // ════════════════════════════════════════════════════════════════════════
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   if (error) {
@@ -283,10 +298,11 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   }
 });
 
-// ── Start All Background Services ───────────────────────────────────────
+// ── Start All Background Services with Alarm Manager ────────────────────
 export const setupGeofenceTracking = async () => {
   try {
     await setupNotificationChannel();
+    await scheduleDailyShiftAlarms();
 
     try {
       await Notifications.requestPermissionsAsync();
@@ -302,7 +318,7 @@ export const setupGeofenceTracking = async () => {
       return { success: false, message: 'Background location required ("Allow all the time").' };
     }
 
-    // ── Start Native Geofencing ─────────────────────────────────────
+    // ── Start Native Geofencing (Low Power OS Hardware Fence) ───────
     if (await TaskManager.isTaskDefined(GEOFENCE_TASK_NAME)) {
       try {
         const isRunning = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK_NAME);
@@ -311,33 +327,14 @@ export const setupGeofenceTracking = async () => {
       await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, [KELTRON_KANNUR_GEOFENCE]);
     }
 
-    // ── Start Persistent Background Location Updates ────────────────
-    if (await TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK)) {
-      try {
-        const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-        if (isRunning) await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-      } catch (e) {}
-
-      await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 15000,      // check every 15 seconds
-        distanceInterval: 10,      // or 10 meters movement
-        deferredUpdatesInterval: 15000,
-        pausesUpdatesAutomatically: false,
-        showsBackgroundLocationIndicator: true,
-        activityType: Location.ActivityType.OtherNavigation,
-        foregroundService: {
-          notificationTitle: '📍 Keltron EMS Geofence Active',
-          notificationBody: 'Automated 700m attendance monitoring active in background.',
-          notificationColor: '#0284c7',
-          killServiceOnDestroy: false,
-        },
-      });
-    }
+    // ── Sync Window & Dynamic Location Service ──────────────────────
+    const shift = await getActiveShift();
+    const localOnShift = (await AsyncStorage.getItem('ems_is_on_shift')) === 'true';
+    await syncAlarmState(localOnShift);
 
     return {
       success: true,
-      message: '📍 Background Auto-Punch Active (700m Plant Zone)',
+      message: `📍 Shift Alarm & Auto-Punch Active (${shift.name}: ${shift.label})`,
     };
   } catch (err) {
     console.error('[Geofence] Setup error:', err);
