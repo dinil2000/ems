@@ -1,12 +1,11 @@
 // ========================================================================
-// Keltron MPP EMS — Smart Shift Alarm & Window-Based Location Scheduler
+// Keltron MPP EMS — Smart Shift Alarm & 24/7 Background Attendance Engine
 // ========================================================================
-// Rules:
-// 1. Shift 1: 07:00 AM to 03:00 PM (Primary default)
-// 2. Punch-In Window: 06:30 AM to 07:30 AM (30 min early to 30 min late)
-// 3. Working Sleep Period: 07:30 AM to 03:00 PM (GPS completely STOPPED to save battery & prevent false indoor exits)
-// 4. Punch-Out Window: 03:00 PM onwards (Shift End wake-up until departure)
-// 5. Off-Shift Sleep Period: After Punch-Out until next morning 06:30 AM (GPS completely STOPPED)
+// Features:
+// 1. Persistent 24/7 Foreground Location Service (NEVER stopped/killed by OS)
+// 2. Intelligent Dynamic Shift Auto-Detection (Shift 1, Shift 2, Shift 3, General)
+// 3. Shift Alarm Notifications at Window Openings
+// 4. Guaranteed Background Wake-Up for Punch-Out at 11 PM, 3 PM, 7 AM or any OT time
 // ========================================================================
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,7 +24,7 @@ export const SHIFT_PRESETS = [
     endMin: 0,
     label: '07:00 AM – 03:00 PM',
     inWindowLabel: '06:30 AM – 07:30 AM',
-    outWindowLabel: '03:00 PM – 04:00 PM',
+    outWindowLabel: '03:00 PM onwards',
   },
   {
     id: 'general',
@@ -36,7 +35,7 @@ export const SHIFT_PRESETS = [
     endMin: 30,
     label: '08:30 AM – 04:30 PM',
     inWindowLabel: '08:00 AM – 09:00 AM',
-    outWindowLabel: '04:30 PM – 05:30 PM',
+    outWindowLabel: '04:30 PM onwards',
   },
   {
     id: 'shift_2',
@@ -47,7 +46,7 @@ export const SHIFT_PRESETS = [
     endMin: 0,
     label: '03:00 PM – 11:00 PM',
     inWindowLabel: '02:30 PM – 03:30 PM',
-    outWindowLabel: '11:00 PM – 12:00 AM',
+    outWindowLabel: '11:00 PM onwards',
   },
   {
     id: 'shift_3',
@@ -58,7 +57,7 @@ export const SHIFT_PRESETS = [
     endMin: 0,
     label: '11:00 PM – 07:00 AM',
     inWindowLabel: '10:30 PM – 11:30 PM',
-    outWindowLabel: '07:00 AM – 08:00 AM',
+    outWindowLabel: '07:00 AM onwards',
   },
 ];
 
@@ -71,7 +70,7 @@ export const setupAlarmChannel = async () => {
     try {
       await Notifications.setNotificationChannelAsync(ALARM_CHANNEL_ID, {
         name: 'Keltron Shift Alarms',
-        description: 'Scheduled alarm wake-ups for automated Punch-In and Punch-Out windows.',
+        description: 'Scheduled alarm notifications for Punch-In and Punch-Out shift windows.',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#0284c7',
@@ -87,12 +86,38 @@ export const setupAlarmChannel = async () => {
   }
 };
 
+// ── Auto-Detect Shift from Current Time ──────────────────────────────────
+export const detectShiftFromTime = (date = new Date()) => {
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const currentMinutes = hours * 60 + minutes;
+
+  // Shift 1: ~ 05:30 AM to 11:30 AM
+  if (currentMinutes >= 330 && currentMinutes < 690) {
+    return SHIFT_PRESETS[0]; // Shift 1 (07:00 - 15:00)
+  }
+  // General Shift: ~ 11:30 AM to 01:30 PM (or if explicitly general)
+  if (currentMinutes >= 690 && currentMinutes < 810) {
+    return SHIFT_PRESETS[1]; // General Shift (08:30 - 16:30)
+  }
+  // Shift 2: ~ 01:30 PM to 08:30 PM (13:30 to 20:30)
+  if (currentMinutes >= 810 && currentMinutes < 1230) {
+    return SHIFT_PRESETS[2]; // Shift 2 (15:00 - 23:00)
+  }
+  // Shift 3: ~ 08:30 PM to 05:30 AM (20:30 to 05:30 next day)
+  return SHIFT_PRESETS[3]; // Shift 3 (23:00 - 07:00)
+};
+
 // ── Get Current Active Shift ────────────────────────────────────────────
 export const getActiveShift = async () => {
   try {
     const savedId = await AsyncStorage.getItem('ems_selected_shift_id');
-    const shift = SHIFT_PRESETS.find(s => s.id === savedId) || SHIFT_PRESETS[0];
-    return shift;
+    if (savedId) {
+      const shift = SHIFT_PRESETS.find(s => s.id === savedId);
+      if (shift) return shift;
+    }
+    // Auto-detect based on current time
+    return detectShiftFromTime();
   } catch (e) {
     return SHIFT_PRESETS[0];
   }
@@ -104,106 +129,91 @@ export const setActiveShift = async (shiftId) => {
   await scheduleDailyShiftAlarms();
 };
 
-// ── Calculate Current Shift Window Status ───────────────────────────────
+// ── Evaluate Shift Window Status for UI ─────────────────────────────────
 export const evaluateShiftWindow = (shift, isCurrentlyOnShift, now = new Date()) => {
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
   const shiftStartMinutes = shift.startHour * 60 + shift.startMin;
   const shiftEndMinutes = shift.endHour * 60 + shift.endMin;
 
-  // Punch In Window: [Start - 30m, Start + 30m]
   const inWindowStart = (shiftStartMinutes - 30 + 1440) % 1440;
   const inWindowEnd = (shiftStartMinutes + 30) % 1440;
 
-  // Check if inside morning punch in window
   let isInMorningWindow = false;
   if (inWindowStart < inWindowEnd) {
     isInMorningWindow = currentMinutes >= inWindowStart && currentMinutes <= inWindowEnd;
   } else {
-    // Night wrap-around
     isInMorningWindow = currentMinutes >= inWindowStart || currentMinutes <= inWindowEnd;
   }
 
-  // Punch Out Window: From shiftEnd onwards
   let isAfterShiftEnd = false;
   if (shiftStartMinutes < shiftEndMinutes) {
     isAfterShiftEnd = currentMinutes >= shiftEndMinutes;
   } else {
-    // Crosses midnight (e.g. night shift)
     isAfterShiftEnd = currentMinutes >= shiftEndMinutes && currentMinutes < shiftStartMinutes;
   }
 
   if (!isCurrentlyOnShift) {
-    if (isInMorningWindow || (currentMinutes >= inWindowStart && currentMinutes < shiftStartMinutes + 60)) {
+    if (isInMorningWindow) {
       return {
         status: 'HUNTING_PUNCH_IN',
-        badge: '🟢 Active: Scanning for Punch In',
-        description: `Punch In Window active (${shift.inWindowLabel}). Background GPS is actively monitoring for plant arrival.`,
-        gpsShouldRun: true,
+        badge: '🟢 Active: Punch-In Window Open',
+        description: `Punch-In window (${shift.inWindowLabel}). Entering 700m plant zone will auto punch in.`,
         color: '#10b981',
       };
     } else {
       return {
-        status: 'OFF_SHIFT_IDLE',
-        badge: '💤 Off Shift (Sleeping)',
-        description: `GPS sleeping to save battery. Alarm will wake up at ${shift.inWindowLabel.split('–')[0].trim()} for Punch In.`,
-        gpsShouldRun: false,
-        color: '#64748b',
+        status: 'OFF_SHIFT_READY',
+        badge: '📍 24/7 Background Geofence Active',
+        description: `Ready for shift. Auto Punch-In will trigger immediately whenever you arrive at the plant.`,
+        color: '#06b6d4',
       };
     }
   } else {
-    // Currently on shift
     if (isAfterShiftEnd) {
       return {
         status: 'HUNTING_PUNCH_OUT',
-        badge: '🟢 Active: Scanning for Punch Out',
-        description: `Shift completed (${shift.label.split('–')[1].trim()}). Background GPS is actively monitoring for plant exit.`,
-        gpsShouldRun: true,
+        badge: '🟢 Shift Completed: Ready for Punch-Out',
+        description: `Shift ended (${shift.label.split('–')[1].trim()}). Leaving 850m perimeter will auto punch out.`,
         color: '#f59e0b',
       };
     } else {
       return {
-        status: 'ON_SHIFT_SLEEPING',
-        badge: '⏸️ On Shift (Battery Saver)',
-        description: `Working on shift. GPS is sleeping to save battery until shift ends at ${shift.label.split('–')[1].trim()}.`,
-        gpsShouldRun: false,
-        color: '#0284c7',
+        status: 'ON_SHIFT_WORKING',
+        badge: '🟢 On Shift (Working)',
+        description: `Working on shift. Auto Punch-Out will trigger when you exit the plant after shift.`,
+        color: '#3b82f6',
       };
     }
   }
 };
 
-// ── Start / Stop Background Location Service Dynamically ────────────────
-export const syncBackgroundLocationService = async (gpsShouldRun) => {
+// ── Ensure 24/7 Persistent Background Location Service is Running ────────
+export const ensureBackgroundLocationRunning = async () => {
   try {
     const isDefined = await TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK);
     if (!isDefined) return;
 
     const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK).catch(() => false);
-
-    if (gpsShouldRun && !isRunning) {
-      console.log('⚡ [Alarm Manager] Window OPEN → Starting Background Location Service');
+    if (!isRunning) {
+      console.log('🚀 [24/7 Attendance Engine] Starting Persistent Background Location Service');
       await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
         accuracy: Location.Accuracy.High,
-        timeInterval: 15000,
-        distanceInterval: 10,
-        deferredUpdatesInterval: 15000,
+        timeInterval: 20000,      // check every 20 seconds
+        distanceInterval: 10,      // or 10m movement
+        deferredUpdatesInterval: 20000,
         pausesUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
         activityType: Location.ActivityType.OtherNavigation,
         foregroundService: {
-          notificationTitle: '📍 Keltron EMS Shift Tracking',
-          notificationBody: 'Active attendance window monitoring (Auto Punch In/Out).',
+          notificationTitle: '📍 Keltron EMS: Automated Attendance Active',
+          notificationBody: '24/7 plant geofence monitoring (Auto Punch In / Out).',
           notificationColor: '#0284c7',
           killServiceOnDestroy: false,
         },
       });
-    } else if (!gpsShouldRun && isRunning) {
-      console.log('🛑 [Alarm Manager] Window CLOSED / Sleeping → Stopping Background Location Service');
-      await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK).catch(() => {});
     }
   } catch (err) {
-    console.error('[Alarm Manager] Sync error:', err.message);
+    console.error('[24/7 Attendance Engine] Error ensuring service runs:', err.message);
   }
 };
 
@@ -211,25 +221,23 @@ export const syncBackgroundLocationService = async (gpsShouldRun) => {
 export const syncAlarmState = async (isPunchedIn) => {
   try {
     await AsyncStorage.setItem('ems_is_on_shift', isPunchedIn ? 'true' : 'false');
+    await ensureBackgroundLocationRunning();
     const shift = await getActiveShift();
-    const evaluation = evaluateShiftWindow(shift, isPunchedIn);
-    await syncBackgroundLocationService(evaluation.gpsShouldRun);
-    return evaluation;
+    return evaluateShiftWindow(shift, isPunchedIn);
   } catch (e) {
     console.error('[Alarm Manager] syncAlarmState error:', e);
   }
 };
 
-// ── Schedule Daily Android Alarm Wake-Up Notifications ─────────────────
+// ── Schedule Daily Android Alarm Reminder Notifications ────────────────
 export const scheduleDailyShiftAlarms = async () => {
   try {
     await setupAlarmChannel();
     const shift = await getActiveShift();
 
-    // Cancel previously scheduled alarms
     await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
 
-    // 1. Morning Alarm Window (30 mins before shift start, e.g. 06:30 AM)
+    // 1. Morning / Shift Start Alarm (30 mins before shift start)
     const morningHour = shift.startHour;
     let morningMin = shift.startMin - 30;
     let actualMorningHour = morningHour;
@@ -240,11 +248,11 @@ export const scheduleDailyShiftAlarms = async () => {
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '⏰ Keltron Shift Alarm: Punch-In Window Open',
+        title: `⏰ Keltron Shift Reminder: ${shift.name}`,
         body: `Shift starts at ${shift.label.split('–')[0].trim()}. Auto Punch-In is active as you enter the plant.`,
         sound: 'default',
         channelId: ALARM_CHANNEL_ID,
-        data: { action: 'WAKEUP_PUNCH_IN_WINDOW' },
+        data: { action: 'SHIFT_START_REMINDER' },
       },
       trigger: {
         hour: actualMorningHour,
@@ -253,14 +261,14 @@ export const scheduleDailyShiftAlarms = async () => {
       },
     });
 
-    // 2. Evening Alarm Window (Shift end time, e.g. 03:00 PM)
+    // 2. Shift End Alarm (Shift end time)
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '⏰ Keltron Shift Alarm: Shift End & Punch-Out Active',
-        body: `Shift completed at ${shift.label.split('–')[1].trim()}. Auto Punch-Out will trigger when you exit the plant.`,
+        title: `⏰ Keltron Shift End: ${shift.name}`,
+        body: `Shift completed at ${shift.label.split('–')[1].trim()}. Auto Punch-Out will record when you leave the plant.`,
         sound: 'default',
         channelId: ALARM_CHANNEL_ID,
-        data: { action: 'WAKEUP_PUNCH_OUT_WINDOW' },
+        data: { action: 'SHIFT_END_REMINDER' },
       },
       trigger: {
         hour: shift.endHour,
@@ -269,7 +277,7 @@ export const scheduleDailyShiftAlarms = async () => {
       },
     });
 
-    console.log(`⏰ [Alarm Manager] Alarms scheduled daily at ${String(actualMorningHour).padStart(2,'0')}:${String(morningMin).padStart(2,'0')} and ${String(shift.endHour).padStart(2,'0')}:${String(shift.endMin).padStart(2,'0')}`);
+    console.log(`⏰ [Alarm Manager] Shift alarms set for ${String(actualMorningHour).padStart(2,'0')}:${String(morningMin).padStart(2,'0')} and ${String(shift.endHour).padStart(2,'0')}:${String(shift.endMin).padStart(2,'0')}`);
   } catch (err) {
     console.log('[Alarm Manager] Error scheduling alarms:', err.message);
   }
