@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK & AAB Bundle
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build-apk:
+  build-android:
     runs-on: ubuntu-latest
 
     steps:
@@ -80,13 +80,19 @@ jobs:
               f.write(content)
           "
 
-      - name: 📦 Bundle JS & Build Signed Production Release APK
+      - name: 📦 Build Signed Production Release APK
         working-directory: ./mobile/android
         run: ./gradlew assembleRelease --no-daemon -x lint
 
-      - name: 📋 Copy & Rename APK
+      - name: 📦 Build Signed Google Play AAB Bundle
+        working-directory: ./mobile/android
+        run: ./gradlew bundleRelease --no-daemon -x lint
+
+      - name: 📋 Copy & Rename Output Files
         run: |
           mkdir -p build_output
+
+          # Copy APK
           if [ -f mobile/android/app/build/outputs/apk/release/app-release.apk ]; then
             cp mobile/android/app/build/outputs/apk/release/app-release.apk build_output/Keltron-MPP-EMS.apk
           elif [ -f mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
@@ -95,11 +101,22 @@ jobs:
             find mobile/android/app/build/outputs/apk -name "*.apk" -exec cp {} build_output/Keltron-MPP-EMS.apk \;
           fi
 
-      - name: 💾 Upload Artifact
+          # Copy AAB Bundle for Google Play Console
+          if [ -f mobile/android/app/build/outputs/bundle/release/app-release.aab ]; then
+            cp mobile/android/app/build/outputs/bundle/release/app-release.aab build_output/Keltron-MPP-EMS.aab
+          elif [ -f mobile/android/app/build/outputs/bundle/release/app-release-unsigned.aab ]; then
+            cp mobile/android/app/build/outputs/bundle/release/app-release-unsigned.aab build_output/Keltron-MPP-EMS.aab
+          else
+            find mobile/android/app/build/outputs/bundle -name "*.aab" -exec cp {} build_output/Keltron-MPP-EMS.aab \;
+          fi
+
+      - name: 💾 Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Keltron-MPP-EMS-APK
-          path: build_output/Keltron-MPP-EMS.apk
+          name: Keltron-MPP-EMS-Binaries
+          path: |
+            build_output/Keltron-MPP-EMS.apk
+            build_output/Keltron-MPP-EMS.aab
           if-no-files-found: error
 
       - name: 🚀 Publish Direct Download GitHub Release
@@ -107,14 +124,17 @@ jobs:
         if: startsWith(github.ref, 'refs/heads/main')
         with:
           tag_name: v1.0.0-latest
-          name: Keltron MPP EMS - Latest Signed Android APK (Official Release)
+          name: Keltron MPP EMS - Signed Android APK & Google Play AAB Bundle
           body: |
-            ### 📱 Keltron MPP EMS - Officially Signed Standalone Android APK
-            - **Officially Signed Release APK**: Signed with RSA 2048-bit V1/V2 production certificate (`Keltron Component Complex Ltd`).
-            - **Fully Bundled**: Offline standalone binary with embedded JavaScript logic & assets.
-            - **Automated Geofence Attendance**: Dual-boundary hysteresis (700m Enter / 850m Exit) & 3-reading debounce.
-            - **Persistent Background Foreground Service**: Runs 24/7 with high-priority auto-punch push alerts.
-            - **1-Tap Battery Optimization Dialog**.
-          files: build_output/Keltron-MPP-EMS.apk
+            ### 📱 Keltron MPP EMS - Production Release Binaries
+            - **Google Play Store AAB Bundle**: `Keltron-MPP-EMS.aab` (Upload this file directly to Google Play Console).
+            - **Standalone Release APK**: `Keltron-MPP-EMS.apk` (Direct device download and sideloading).
+            - **Production Certificate**: Signed with RSA 2048-bit V1/V2 production certificate (`Keltron Component Complex Ltd`).
+            - **24/7 Background Geofence Attendance**: Persistent foreground service for all shifts (Shift 1, Shift 2, Shift 3, General).
+            - **Shift Alarm Manager & 7.30h Working Hours**: 30-minute lunch break deduction and shift window alerts.
+            - **Privacy Policy**: [https://mppems.vercel.app/privacy-policy](https://mppems.vercel.app/privacy-policy).
+          files: |
+            build_output/Keltron-MPP-EMS.apk
+            build_output/Keltron-MPP-EMS.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
