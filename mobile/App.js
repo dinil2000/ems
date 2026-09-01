@@ -19,7 +19,7 @@ import AttendanceHistoryScreen from './src/screens/AttendanceHistoryScreen';
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentScreen, setCurrentScreen] = useState('home'); // 'home', 'notice', 'history', 'payroll', 'maintenance', 'admin', 'profile'
+  const [currentScreen, setCurrentScreen] = useState('home'); // 'home', 'history', 'notice', 'payroll', 'maintenance', 'admin', 'profile'
 
   // Initialize background geofencing & persistent location service
   useEffect(() => {
@@ -98,31 +98,39 @@ export default function App() {
 
   const isSiteAdmin = user.role === 'SiteAdmin';
 
+  const getScreenHeaderTitle = () => {
+    switch (currentScreen) {
+      case 'history': return '📊 Attendance & Cycle Graph';
+      case 'notice': return '📅 Weekly Shift Notice';
+      case 'payroll': return '💰 Monthly Payslip & OT';
+      case 'maintenance': return '🔧 Machine Cleaning Alerts';
+      case 'admin': return '🛡️ Master Admin Console';
+      case 'profile': return '👤 Employee Profile';
+      default: return 'Keltron MPP EMS';
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      {/* Top App Bar with Official Keltron Logo, Back & Exit App Buttons */}
+      {/* Clean Modern Top App Bar */}
       <View style={styles.topAppBar}>
-        {currentScreen !== 'home' ? (
-          <TouchableOpacity onPress={() => setCurrentScreen('home')} style={styles.appBarBackBtn}>
-            <Text style={styles.appBarBackText}>◀ Back to Home</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={styles.logoBadge}>
-              <Text style={styles.logoText}>KELTRON</Text>
-              <Text style={styles.logoSubText}>കെൽട്രോൺ</Text>
-            </View>
-            <View>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: '#f8fafc' }}>Keltron MPP EMS</Text>
-              <Text style={{ fontSize: 10, color: '#06b6d4', fontWeight: '600' }}>Kannur Plant</Text>
-            </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoText}>KELTRON</Text>
+            <Text style={styles.logoSubText}>കെൽട്രോൺ</Text>
           </View>
-        )}
+          <View>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: '#f8fafc' }}>
+              {currentScreen === 'home' ? 'Keltron MPP EMS' : getScreenHeaderTitle()}
+            </Text>
+            <Text style={{ fontSize: 9, color: '#06b6d4', fontWeight: '600' }}>Kannur Unit • 300m Geofence</Text>
+          </View>
+        </View>
 
         <TouchableOpacity onPress={handleExitApp} style={styles.appBarExitBtn}>
-          <Text style={styles.appBarExitText}>🚪 Exit App</Text>
+          <Text style={styles.appBarExitText}>🚪 Exit</Text>
         </TouchableOpacity>
       </View>
 
@@ -160,12 +168,13 @@ export default function App() {
           <ProfileScreen
             user={user}
             onBack={() => setCurrentScreen('home')}
+            onNavigate={(screen) => setCurrentScreen(screen)}
             onUserUpdate={(updatedUser) => setUser(updatedUser)}
           />
         )}
       </View>
 
-      {/* Bottom Navigation Tab Bar (Provides All Options & Back Navigation) */}
+      {/* ── Beautiful Rearranged 5-Tab Bottom Navigation Bar ─────────── */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tabItem, currentScreen === 'home' && styles.tabActive]}
@@ -180,7 +189,7 @@ export default function App() {
           onPress={() => setCurrentScreen('history')}
         >
           <Text style={styles.tabIcon}>📊</Text>
-          <Text style={[styles.tabText, currentScreen === 'history' && styles.tabTextActive]}>Punching</Text>
+          <Text style={[styles.tabText, currentScreen === 'history' && styles.tabTextActive]}>Attendance</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -198,24 +207,6 @@ export default function App() {
           <Text style={styles.tabIcon}>💰</Text>
           <Text style={[styles.tabText, currentScreen === 'payroll' && styles.tabTextActive]}>Payroll</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabItem, currentScreen === 'maintenance' && styles.tabActive]}
-          onPress={() => setCurrentScreen('maintenance')}
-        >
-          <Text style={styles.tabIcon}>🔧</Text>
-          <Text style={[styles.tabText, currentScreen === 'maintenance' && styles.tabTextActive]}>Cleaning</Text>
-        </TouchableOpacity>
-
-        {isSiteAdmin && (
-          <TouchableOpacity
-            style={[styles.tabItem, currentScreen === 'admin' && styles.tabActive]}
-            onPress={() => setCurrentScreen('admin')}
-          >
-            <Text style={styles.tabIcon}>🛡️</Text>
-            <Text style={[styles.tabText, currentScreen === 'admin' && styles.tabTextActive]}>Admin</Text>
-          </TouchableOpacity>
-        )}
 
         <TouchableOpacity
           style={[styles.tabItem, currentScreen === 'profile' && styles.tabActive]}
@@ -242,7 +233,7 @@ const styles = StyleSheet.create({
   },
   topAppBar: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#1e293b',
     paddingTop: 45,
@@ -253,47 +244,34 @@ const styles = StyleSheet.create({
   },
   logoBadge: {
     backgroundColor: '#0284c7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
     borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     alignItems: 'center',
-    justify: 'center',
-    borderWidth: 1,
-    borderColor: '#38bdf8',
+    justifyContent: 'center',
   },
   logoText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
   logoSubText: {
     color: '#e0f2fe',
-    fontSize: 8,
-    fontWeight: '700',
-  },
-  appBarBackBtn: {
-    backgroundColor: '#334155',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  appBarBackText: {
-    color: '#38bdf8',
-    fontSize: 13,
+    fontSize: 7,
     fontWeight: '700',
   },
   appBarExitBtn: {
-    backgroundColor: 'rgba(244, 63, 94, 0.2)',
-    borderColor: '#f43f5e',
+    backgroundColor: 'rgba(244, 63, 94, 0.15)',
     borderWidth: 1,
+    borderColor: '#f43f5e',
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 6,
   },
   appBarExitText: {
     color: '#f87171',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
   tabBar: {
@@ -301,28 +279,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     borderTopWidth: 1,
     borderTopColor: '#334155',
-    paddingVertical: 8,
-    paddingHorizontal: 2,
-    justify: 'space-around',
+    paddingBottom: 14,
+    paddingTop: 6,
+    paddingHorizontal: 6,
+    justifyContent: 'space-around',
+    alignItems: 'center',
   },
   tabItem: {
+    flex: 1,
     alignItems: 'center',
-    justify: 'center',
+    justifyContent: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 6,
     borderRadius: 8,
   },
   tabActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    backgroundColor: 'rgba(2, 132, 199, 0.2)',
+    borderTopWidth: 2,
+    borderTopColor: '#38bdf8',
   },
   tabIcon: {
     fontSize: 17,
+    marginBottom: 2,
   },
   tabText: {
-    fontSize: 9,
+    fontSize: 10,
     color: '#94a3b8',
     fontWeight: '600',
-    marginTop: 2,
   },
   tabTextActive: {
     color: '#38bdf8',

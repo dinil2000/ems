@@ -511,8 +511,8 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
       <View style={styles.navGrid}>
         <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('history')}>
           <Text style={styles.navIcon}>📊</Text>
-          <Text style={styles.navTitle}>Punching Logs</Text>
-          <Text style={styles.navSubtitle}>Monthly Attendance Data</Text>
+          <Text style={styles.navTitle}>Attendance & Cycle</Text>
+          <Text style={styles.navSubtitle}>Monthly Shift Graph & Logs</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('notice')}>

@@ -193,14 +193,6 @@ export default function AdminScreen({ user, onBack }) {
 
   return (
     <View style={styles.container}>
-      {/* Header Bar with Back Button */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>◀ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Site Admin Operations Portal</Text>
-      </View>
-
       <ScrollView contentContainerStyle={styles.content}>
         {/* Banner Card */}
         <View style={styles.bannerCard}>

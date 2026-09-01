@@ -29,9 +29,10 @@ const MPP_MACHINES = [
   { id: '766', name: 'Metalizing #766', cat: 'Metalizing' },
 ];
 
-export default function ProfileScreen({ user, onBack, onUserUpdate }) {
+export default function ProfileScreen({ user, onBack, onNavigate, onUserUpdate }) {
   const profile = user?.employeeProfile || {};
   const [activeTab, setActiveTab] = useState('profile');
+  const isSiteAdmin = user?.role === 'SiteAdmin';
 
   // Profile Form State
   const [name, setName] = useState(profile.name || user.employeeToken);
@@ -142,14 +143,6 @@ export default function ProfileScreen({ user, onBack, onUserUpdate }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Top Header */}
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Text style={styles.backBtnText}>◀ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>My Profile & Security Settings</Text>
-      </View>
-
       {/* Sub Tabs */}
       <View style={styles.tabRow}>
         <TouchableOpacity
@@ -172,6 +165,29 @@ export default function ProfileScreen({ user, onBack, onUserUpdate }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Quick Enterprise Shortcuts Card */}
+        <View style={styles.shortcutCard}>
+          <Text style={styles.shortcutTitle}>⚡ Quick Shortcuts</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+            <TouchableOpacity
+              style={styles.shortcutBtn}
+              onPress={() => onNavigate && onNavigate('maintenance')}
+            >
+              <Text style={{ fontSize: 16 }}>🔧</Text>
+              <Text style={styles.shortcutBtnText}>Machine Cleaning</Text>
+            </TouchableOpacity>
+
+            {isSiteAdmin && (
+              <TouchableOpacity
+                style={[styles.shortcutBtn, { borderColor: '#818cf8' }]}
+                onPress={() => onNavigate && onNavigate('admin')}
+              >
+                <Text style={{ fontSize: 16 }}>🛡️</Text>
+                <Text style={[styles.shortcutBtnText, { color: '#818cf8' }]}>Admin Console</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
         {activeTab === 'profile' ? (
           <View style={styles.card}>
             <Text style={styles.label}>Punching Token Number</Text>
@@ -444,5 +460,34 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  shortcutCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  shortcutTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94a3b8',
+  },
+  shortcutBtn: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    padding: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  shortcutBtnText: {
+    color: '#38bdf8',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
   },
 });

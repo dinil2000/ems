@@ -139,14 +139,6 @@ export default function PayrollScreen({ user, onBack }) {
 
   return (
     <View style={styles.container}>
-      {/* Header Bar with Back Button */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>◀ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Keltron MPP Payroll Portal</Text>
-      </View>
-
       {/* Sub-Tab Navigation Toggle */}
       <View style={styles.toggleBar}>
         <TouchableOpacity

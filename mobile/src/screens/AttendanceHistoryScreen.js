@@ -8,8 +8,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
-  Image,
 } from 'react-native';
+import Svg, { Circle, G, Text as SvgText } from 'react-native-svg';
 import axios from 'axios';
 import { getApiUrlList } from '../config/api';
 
@@ -21,6 +21,7 @@ const SHIFT_CONFIG = {
     code: '07:00',
     color: '#f59e0b', // Amber/Gold
     bgLight: 'rgba(245, 158, 11, 0.15)',
+    border: '#f59e0b'
   },
   shift2: {
     id: 'shift2',
@@ -29,6 +30,7 @@ const SHIFT_CONFIG = {
     code: '15:00',
     color: '#38bdf8', // Sky Blue
     bgLight: 'rgba(56, 189, 248, 0.15)',
+    border: '#38bdf8'
   },
   shift3: {
     id: 'shift3',
@@ -37,6 +39,7 @@ const SHIFT_CONFIG = {
     code: '23:00',
     color: '#c084fc', // Purple
     bgLight: 'rgba(192, 132, 252, 0.15)',
+    border: '#c084fc'
   },
   general: {
     id: 'general',
@@ -45,6 +48,7 @@ const SHIFT_CONFIG = {
     code: '08:30',
     color: '#34d399', // Emerald Green
     bgLight: 'rgba(52, 211, 153, 0.15)',
+    border: '#34d399'
   }
 };
 
@@ -212,28 +216,19 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
     };
   }, [filteredRecords]);
 
+  // ── Svg Donut Geometry ───────────────────────────────────────────────────
+  const chartRadius = 60;
+  const strokeWidth = 18;
+  const circumference = 2 * Math.PI * chartRadius;
+  let accumulatedPercent = 0;
+
   return (
     <View style={styles.container}>
-      {/* Header Bar with Back Button */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>◀ Back</Text>
-        </TouchableOpacity>
-
-        <Image
-          source={require('../../assets/icon.png')}
-          style={styles.logoImage}
-          resizeMode="contain"
-        />
-
-        <Text style={styles.headerTitle}>Punching & Shift Analytics</Text>
-      </View>
-
-      {/* Action & Search Bar */}
+      {/* ── Search & Employee Info Bar ── */}
       <View style={styles.searchBar}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: isSupervisorOrAdmin ? 6 : 0 }}>
           <Text style={styles.searchLabel}>
-            {isSupervisorOrAdmin ? 'Search Employee Token #:' : `Punch Logs for Token #${user.employeeToken}`}
+            {isSupervisorOrAdmin ? 'Search Employee Token #:' : `Punching Logs for Token #${user.employeeToken}`}
           </Text>
           <Text style={{ fontSize: 11, color: '#38bdf8', fontWeight: '700' }}>
             {filteredRecords.length} Entries in Cycle
@@ -281,56 +276,95 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#38bdf8" />}
       >
-        {/* ── Cycle Graphical Representation & Shift Percentage Card ─────── */}
+        {/* ── Circular Cycle Attendance Diagram Card ─────────────────────── */}
         <View style={styles.graphCard}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, marginRight: 6 }}>📊</Text>
-              <Text style={styles.graphTitle}>MONTHLY SHIFT CYCLE BREAKDOWN</Text>
+              <Text style={{ fontSize: 16, marginRight: 6 }}>⭕</Text>
+              <Text style={styles.graphTitle}>MONTHLY SHIFT CYCLE DIAGRAM</Text>
             </View>
             <View style={styles.totalBadge}>
-              <Text style={styles.totalBadgeText}>{shiftStats.totalShifts} Shifts</Text>
+              <Text style={styles.totalBadgeText}>{activeCycle.label}</Text>
             </View>
           </View>
 
-          {/* Graphical Proportional Segmented Cycle Bar */}
-          <View style={styles.segmentedBar}>
-            {shiftStats.totalShifts > 0 ? (
-              shiftStats.shifts.map(shift => {
-                if (shift.percentage <= 0) return null;
-                return (
-                  <View
-                    key={shift.id}
-                    style={{
-                      width: `${shift.percentage}%`,
-                      height: '100%',
-                      backgroundColor: shift.color,
-                    }}
+          {/* 1. Circular Donut Cycle SVG Diagram */}
+          <View style={styles.donutContainer}>
+            <View style={{ width: 160, height: 160, alignItems: 'center', justifyContent: 'center' }}>
+              <Svg width="160" height="160" viewBox="0 0 160 160">
+                <G rotation="-90" origin="80, 80">
+                  {/* Background Track Circle */}
+                  <Circle
+                    cx="80"
+                    cy="80"
+                    r={chartRadius}
+                    stroke="#1e293b"
+                    strokeWidth={strokeWidth}
+                    fill="transparent"
                   />
-                );
-              })
-            ) : (
-              <View style={{ width: '100%', height: '100%', backgroundColor: '#334155' }} />
-            )}
+
+                  {/* Slices for Shift 1, Shift 2, Shift 3, General */}
+                  {shiftStats.totalShifts > 0 ? (
+                    shiftStats.shifts.map(shift => {
+                      if (shift.percentage <= 0) return null;
+                      const strokeDasharray = `${(shift.percentage / 100) * circumference} ${circumference}`;
+                      const strokeDashoffset = -((accumulatedPercent / 100) * circumference);
+                      accumulatedPercent += shift.percentage;
+
+                      return (
+                        <Circle
+                          key={shift.id}
+                          cx="80"
+                          cy="80"
+                          r={chartRadius}
+                          stroke={shift.color}
+                          strokeWidth={strokeWidth}
+                          strokeDasharray={strokeDasharray}
+                          strokeDashoffset={strokeDashoffset}
+                          fill="transparent"
+                          strokeLinecap="round"
+                        />
+                      );
+                    })
+                  ) : (
+                    <Circle
+                      cx="80"
+                      cy="80"
+                      r={chartRadius}
+                      stroke="#334155"
+                      strokeWidth={strokeWidth}
+                      fill="transparent"
+                      strokeDasharray="4, 4"
+                    />
+                  )}
+                </G>
+              </Svg>
+
+              {/* Center Donut Label */}
+              <View style={styles.donutCenter}>
+                <Text style={styles.donutCenterVal}>{shiftStats.totalShifts}</Text>
+                <Text style={styles.donutCenterSub}>Shifts Worked</Text>
+              </View>
+            </View>
+
+            {/* Quick Stat Counters */}
+            <View style={styles.statsRow}>
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>Regular Hrs</Text>
+                <Text style={styles.statVal}>{shiftStats.totalWorkHours}h</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>Overtime (OT)</Text>
+                <Text style={[styles.statVal, { color: '#fbbf24' }]}>+{shiftStats.totalOTHours}h</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>On-Time</Text>
+                <Text style={[styles.statVal, { color: '#34d399' }]}>{shiftStats.onTimeRate}%</Text>
+              </View>
+            </View>
           </View>
 
-          {/* Quick Stat Counters */}
-          <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Regular Hrs</Text>
-              <Text style={styles.statVal}>{shiftStats.totalWorkHours}h</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Overtime (OT)</Text>
-              <Text style={[styles.statVal, { color: '#fbbf24' }]}>+{shiftStats.totalOTHours}h</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>On-Time</Text>
-              <Text style={[styles.statVal, { color: '#34d399' }]}>{shiftStats.onTimeRate}%</Text>
-            </View>
-          </View>
-
-          {/* Shift Count & Percentage Cards (Simultaneous Display) */}
+          {/* 2. Shift Percentage & Exact Count Cards (Simultaneous Display) */}
           <View style={{ marginTop: 12 }}>
             {shiftStats.shifts.map(shift => (
               <View
@@ -466,39 +500,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f172a',
   },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    paddingTop: 50,
-    paddingBottom: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  backBtn: {
-    backgroundColor: '#334155',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginRight: 10,
-  },
-  backBtnText: {
-    color: '#38bdf8',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  logoImage: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  headerTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#f8fafc',
-  },
   searchBar: {
     backgroundColor: '#1e293b',
     padding: 12,
@@ -565,7 +566,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   content: {
-    padding: 16,
+    padding: 14,
     paddingBottom: 40,
   },
   graphCard: {
@@ -577,7 +578,7 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   graphTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: '#f8fafc',
   },
@@ -591,24 +592,41 @@ const styles = StyleSheet.create({
   },
   totalBadgeText: {
     color: '#38bdf8',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
   },
-  segmentedBar: {
-    height: 10,
-    borderRadius: 5,
+  donutContainer: {
+    alignItems: 'center',
     backgroundColor: '#090d16',
-    flexDirection: 'row',
-    overflow: 'hidden',
-    marginBottom: 12,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  donutCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  donutCenterVal: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#f8fafc',
+  },
+  donutCenterSub: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#090d16',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 4,
+    justifyContent: 'space-around',
+    width: '100%',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
   },
   statBox: {
     alignItems: 'center',

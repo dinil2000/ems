@@ -136,14 +136,6 @@ export default function MaintenanceScreen({ user, onBack }) {
 
   return (
     <View style={styles.container}>
-      {/* Header Bar with Back Button */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>◀ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Machine Cleaning & Maintenance</Text>
-      </View>
-
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#38bdf8" />}
