@@ -157,7 +157,7 @@ export const evaluateShiftWindow = (shift, isCurrentlyOnShift, now = new Date())
       return {
         status: 'HUNTING_PUNCH_IN',
         badge: '🟢 Active: Punch-In Window Open',
-        description: `Punch-In window (${shift.inWindowLabel}). Entering 700m plant zone will auto punch in.`,
+        description: `Punch-In window (${shift.inWindowLabel}). Entering 300m plant zone will auto punch in.`,
         color: '#10b981',
       };
     } else {
@@ -173,7 +173,7 @@ export const evaluateShiftWindow = (shift, isCurrentlyOnShift, now = new Date())
       return {
         status: 'HUNTING_PUNCH_OUT',
         badge: '🟢 Shift Completed: Ready for Punch-Out',
-        description: `Shift ended (${shift.label.split('–')[1].trim()}). Leaving 850m perimeter will auto punch out.`,
+        description: `Shift ended (${shift.label.split('–')[1].trim()}). Leaving 400m perimeter will auto punch out.`,
         color: '#f59e0b',
       };
     } else {

@@ -38,7 +38,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
   const [recentRecords, setRecentRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [locationStatus, setLocationStatus] = useState('📍 Geofence Active (Keltron 700m Zone)');
+  const [locationStatus, setLocationStatus] = useState('📍 Geofence Active (Keltron 300m Zone)');
   const [userLocation, setUserLocation] = useState(null);
   const [distanceMeters, setDistanceMeters] = useState(null);
   const [autoPunchEnabled, setAutoPunchEnabled] = useState(true);
@@ -162,13 +162,13 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             const dist = calculateDistanceToKeltron(lat, lng);
             setDistanceMeters(dist);
 
-            const isInside700m = dist <= KELTRON_KANNUR_GEOFENCE.radius;
-            const isOutside850m = dist >= (KELTRON_KANNUR_GEOFENCE.exitRadius || 850);
+            const isInside300m = dist <= KELTRON_KANNUR_GEOFENCE.radius;
+            const isOutside400m = dist >= (KELTRON_KANNUR_GEOFENCE.exitRadius || 400);
 
-            if (isInside700m) {
-              setLocationStatus(`📍 Inside 700m Plant Boundary (${dist}m)`);
+            if (isInside300m) {
+              setLocationStatus(`📍 Inside 300m Plant Boundary (${dist}m)`);
               outsideCounter = 0;
-            } else if (isOutside850m) {
+            } else if (isOutside400m) {
               setLocationStatus(`📍 Outside Plant Perimeter (${dist}m)`);
             } else {
               setLocationStatus(`📍 Buffer Zone (${dist}m from Plant)`);
@@ -178,14 +178,14 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             if (autoPunchEnabled) {
               const isPunchedIn = attendance && (attendance.status === 'In Progress' || attendance.status === 'Pending Late Approval' || (attendance.punchIn && !attendance.punchOut));
 
-              // ENTER 700m boundary -> Auto Punch In
-              if (isInside700m && !isPunchedIn && prevInsideRef.current !== true) {
-                setAutoPunchMessage(`⚡ Auto-Punched In! Entered 700m perimeter (${dist}m)`);
+              // ENTER 300m boundary -> Auto Punch In
+              if (isInside300m && !isPunchedIn && prevInsideRef.current !== true) {
+                setAutoPunchMessage(`⚡ Auto-Punched In! Entered 300m perimeter (${dist}m)`);
                 handleAutoPunchIn(lat, lng);
                 prevInsideRef.current = true;
               }
-              // EXIT past 850m boundary with debouncing (3 consecutive checks) -> Auto Punch Out
-              else if (isOutside850m && isPunchedIn) {
+              // EXIT past 400m boundary with debouncing (3 consecutive checks) -> Auto Punch Out
+              else if (isOutside400m && isPunchedIn) {
                 outsideCounter += 1;
                 if (outsideCounter >= 3 && prevInsideRef.current !== false) {
                   setAutoPunchMessage(`⚡ Auto-Punched Out! Left plant perimeter (${dist}m)`);
@@ -254,16 +254,16 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
             longitude: lng || KELTRON_KANNUR_GEOFENCE.longitude,
             isGeofencedAutoPunch: true,
-            locationName: 'Keltron Kannur Plant (Inside 700m Geofence)'
+            locationName: 'Keltron Kannur Plant (Inside 300m Geofence)'
           }, { timeout: 6000 });
           if (res.data) {
             const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             await sendAutoPunchNotification(
-              '🟢 Auto Punched In (700m Plant Zone)',
+              '🟢 Auto Punched In (300m Plant Zone)',
               `Token #${user.employeeToken} automatically punched in at ${timeStr} upon entering Keltron Kannur Plant.`
             );
             await syncAlarmState(true);
-            Alert.alert('⚡ Automated Punch In', 'You entered the 700m Keltron Kannur plant perimeter!');
+            Alert.alert('⚡ Automated Punch In', 'You entered the 300m Keltron Kannur plant perimeter!');
             await fetchStatus();
             break;
           }
@@ -282,16 +282,16 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
             longitude: lng || KELTRON_KANNUR_GEOFENCE.longitude,
             isGeofencedAutoPunch: true,
-            locationName: 'Keltron Kannur Plant (Exited 700m Geofence)'
+            locationName: 'Keltron Kannur Plant (Exited 300m Geofence)'
           }, { timeout: 6000 });
           if (res.data) {
             const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             await sendAutoPunchNotification(
-              '🔴 Auto Punched Out (Left 700m Zone)',
+              '🔴 Auto Punched Out (Left 300m Zone)',
               `Token #${user.employeeToken} automatically punched out at ${timeStr} upon leaving Keltron Kannur Plant.`
             );
             await syncAlarmState(false);
-            Alert.alert('⚡ Automated Punch Out', 'You left the 700m Keltron Kannur plant perimeter!');
+            Alert.alert('⚡ Automated Punch Out', 'You left the 300m Keltron Kannur plant perimeter!');
             await fetchStatus();
             break;
           }
@@ -316,7 +316,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             latitude: lat,
             longitude: lng,
             isGeofencedAutoPunch: isInside,
-            locationName: isInside ? 'Keltron Kannur Plant (Inside 700m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
+            locationName: isInside ? 'Keltron Kannur Plant (Inside 300m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
           }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
@@ -352,7 +352,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             latitude: lat,
             longitude: lng,
             isGeofencedAutoPunch: isInside,
-            locationName: isInside ? 'Keltron Kannur Plant (Inside 700m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
+            locationName: isInside ? 'Keltron Kannur Plant (Inside 300m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
           }, { timeout: 6000 });
           if (res) break;
         } catch (e) {}
@@ -373,7 +373,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
   };
 
   const isPunchedIn = attendance && (attendance.status === 'In Progress' || attendance.status === 'Pending Late Approval' || (attendance.punchIn && !attendance.punchOut));
-  const isInside700m = distanceMeters !== null && distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius;
+  const isInside300m = distanceMeters !== null && distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius;
 
   return (
     <ScrollView
@@ -445,16 +445,16 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         )}
       </View>
 
-      {/* Digital Clock & 700m Automated Geofence Punch Widget */}
+      {/* Digital Clock & 300m Automated Geofence Punch Widget */}
       <View style={styles.clockCard}>
-        <Text style={styles.clockLabel}>MPP 700M AUTOMATED GEOFENCE PUNCHING</Text>
+        <Text style={styles.clockLabel}>MPP 300M AUTOMATED GEOFENCE PUNCHING</Text>
         <Text style={styles.clockTime}>{clockTime}</Text>
         <Text style={styles.dateLabel}>{new Date().toDateString()}</Text>
 
-        {/* Live GPS Radar Bar (700m Radius) */}
-        <View style={[styles.locationBar, isInside700m && styles.locationBarInside]}>
+        {/* Live GPS Radar Bar (300m Radius) */}
+        <View style={[styles.locationBar, isInside300m && styles.locationBarInside]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={[styles.locationText, isInside700m && { color: '#34d399' }]}>
+            <Text style={[styles.locationText, isInside300m && { color: '#34d399' }]}>
               {locationStatus}
             </Text>
             <TouchableOpacity
@@ -468,7 +468,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           </View>
 
           <Text style={styles.geofenceNote}>
-            📍 Target: Keltron Kannur Plant (11.9838°N, 75.3742°E) • 700m Auto Zone
+            📍 Target: Keltron Kannur Plant (11.9838°N, 75.3742°E) • 300m Auto Zone
           </Text>
 
           {autoPunchMessage ? (

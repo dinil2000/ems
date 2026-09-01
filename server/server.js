@@ -43,7 +43,7 @@ app.get(['/privacy-policy', '/api/privacy-policy'], (req, res) => {
     <h2>1. Information We Collect</h2>
     <ul>
       <li><strong>Employee Profile Data:</strong> Employee Token Number, Full Name, Department, Designation, Assigned Shift Schedule, and Contact Details for workforce identity and payroll processing.</li>
-      <li><strong>Location Data (Foreground & Background):</strong> The app collects precise and approximate location data using <code>ACCESS_FINE_LOCATION</code>, <code>ACCESS_BACKGROUND_LOCATION</code>, and <code>FOREGROUND_SERVICE_LOCATION</code> permissions to enable automated attendance recording (Auto Punch-In and Auto Punch-Out) when entering or leaving the 700-meter perimeter of the Keltron Kannur Plant.</li>
+      <li><strong>Location Data (Foreground & Background):</strong> The app collects precise and approximate location data using <code>ACCESS_FINE_LOCATION</code>, <code>ACCESS_BACKGROUND_LOCATION</code>, and <code>FOREGROUND_SERVICE_LOCATION</code> permissions to enable automated attendance recording (Auto Punch-In and Auto Punch-Out) when entering or leaving the 300-meter perimeter of the Keltron Kannur Plant.</li>
       <li><strong>Attendance & Work Logs:</strong> Punch-in times, punch-out times, total hours worked, overtime hours, and shift status.</li>
     </ul>
 

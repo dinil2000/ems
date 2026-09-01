@@ -153,7 +153,7 @@ router.post('/punch-in', async (req, res) => {
       punchInLocation: {
         latitude: latitude || 11.983878,
         longitude: longitude || 75.374253,
-        locationName: locationName || 'Keltron Kannur Plant (Inside 700m Geofence)',
+        locationName: locationName || 'Keltron Kannur Plant (Inside 300m Geofence)',
         isGeofencedAutoPunch: !!isGeofencedAutoPunch
       },
       isSunday,
@@ -164,7 +164,7 @@ router.post('/punch-in', async (req, res) => {
       status,
     });
 
-    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated 700m Geofenced GPS Auto-Punch)' : '';
+    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated 300m Geofenced GPS Auto-Punch)' : '';
 
     if (isLate) {
       return res.status(201).json({
@@ -268,7 +268,7 @@ router.post('/punch-out', async (req, res) => {
     record.punchOutLocation = {
       latitude: latitude || 11.983878,
       longitude: longitude || 75.374253,
-      locationName: locationName || 'Keltron Kannur Plant (Inside 700m Geofence)',
+      locationName: locationName || 'Keltron Kannur Plant (Inside 300m Geofence)',
       isGeofencedAutoPunch: !!isGeofencedAutoPunch
     };
     record.totalHours = workingHours;
@@ -276,7 +276,7 @@ router.post('/punch-out', async (req, res) => {
     record.status = 'Present';
     await record.save();
 
-    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated 700m Geofenced GPS Exit Punch)' : '';
+    const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated 300m Geofenced GPS Exit Punch)' : '';
 
     res.json({
       message: `Punched Out successfully at ${punchOutTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice}! Worked: ${wHrs}h ${wMins}m | OT: ${oHrs}h ${oMins}m`,

@@ -105,7 +105,7 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
         <View style={styles.bannerCard}>
           <Text style={styles.bannerTitle}>📊 Monthly Punching & Attendance Logs</Text>
           <Text style={styles.bannerSubtitle}>
-            Viewing Token #{searchToken || user.employeeToken} • {records.length} Recorded Entries • 700m Plant Boundary
+            Viewing Token #{searchToken || user.employeeToken} • {records.length} Recorded Entries • 300m Plant Boundary
           </Text>
           <View style={styles.rulesBox}>
             <Text style={styles.rulesText}>
@@ -175,7 +175,7 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
                 </View>
 
                 <View style={styles.locationTag}>
-                  <Text style={styles.locationText}>📍 Keltron Kannur Plant (700m Geofence Verified)</Text>
+                  <Text style={styles.locationText}>📍 Keltron Kannur Plant (300m Geofence Verified)</Text>
                 </View>
               </View>
             );
