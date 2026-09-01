@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -13,11 +13,47 @@ import {
 import axios from 'axios';
 import { getApiUrlList } from '../config/api';
 
+const SHIFT_CONFIG = {
+  shift1: {
+    id: 'shift1',
+    name: 'Shift 1 (1st Shift)',
+    timeRange: '07:00 AM – 03:00 PM',
+    code: '07:00',
+    color: '#f59e0b', // Amber/Gold
+    bgLight: 'rgba(245, 158, 11, 0.15)',
+  },
+  shift2: {
+    id: 'shift2',
+    name: 'Shift 2 (2nd Shift)',
+    timeRange: '03:00 PM – 11:00 PM',
+    code: '15:00',
+    color: '#38bdf8', // Sky Blue
+    bgLight: 'rgba(56, 189, 248, 0.15)',
+  },
+  shift3: {
+    id: 'shift3',
+    name: 'Shift 3 (Night Shift)',
+    timeRange: '11:00 PM – 07:00 AM',
+    code: '23:00',
+    color: '#c084fc', // Purple
+    bgLight: 'rgba(192, 132, 252, 0.15)',
+  },
+  general: {
+    id: 'general',
+    name: 'General Shift',
+    timeRange: '08:30 AM – 04:30 PM',
+    code: '08:30',
+    color: '#34d399', // Emerald Green
+    bgLight: 'rgba(52, 211, 153, 0.15)',
+  }
+};
+
 export default function AttendanceHistoryScreen({ user, onBack }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchToken, setSearchToken] = useState(user?.employeeToken || '');
+  const [selectedCycleId, setSelectedCycleId] = useState('current');
 
   const isSupervisorOrAdmin = user?.role === 'Supervisor' || user?.role === 'SiteAdmin';
 
@@ -52,6 +88,130 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
     setRefreshing(false);
   };
 
+  // ── Compute Standard Monthly Billing Cycles (26th to 25th) ───────────────
+  const billingCycles = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    const cycles = [];
+
+    let baseMonth = currentMonth;
+    let baseYear = currentYear;
+    if (now.getDate() < 26) {
+      baseMonth -= 1;
+      if (baseMonth < 0) {
+        baseMonth = 11;
+        baseYear -= 1;
+      }
+    }
+
+    for (let i = 0; i < 4; i++) {
+      let startM = baseMonth - i;
+      let startY = baseYear;
+      while (startM < 0) {
+        startM += 12;
+        startY -= 1;
+      }
+
+      let endM = startM + 1;
+      let endY = startY;
+      if (endM > 11) {
+        endM = 0;
+        endY += 1;
+      }
+
+      const startDate = new Date(startY, startM, 26, 0, 0, 0);
+      const endDate = new Date(endY, endM, 25, 23, 59, 59);
+
+      const startMonthName = startDate.toLocaleDateString('en-US', { month: 'short' });
+      const endMonthName = endDate.toLocaleDateString('en-US', { month: 'short' });
+
+      const label = i === 0
+        ? `Current (${startMonthName} 26 – ${endMonthName} 25)`
+        : `${startMonthName} 26 – ${endMonthName} 25`;
+
+      cycles.push({
+        id: i === 0 ? 'current' : `cycle_${startY}_${startM}`,
+        label,
+        startDate,
+        endDate,
+      });
+    }
+
+    cycles.push({
+      id: 'all',
+      label: 'All History',
+      startDate: new Date(2020, 0, 1),
+      endDate: new Date(2030, 11, 31),
+    });
+
+    return cycles;
+  }, []);
+
+  const activeCycle = billingCycles.find(c => c.id === selectedCycleId) || billingCycles[0];
+
+  // ── Filter Records for the Selected Cycle ────────────────────────────────
+  const filteredRecords = useMemo(() => {
+    if (!records || records.length === 0) return [];
+    if (selectedCycleId === 'all') return records;
+
+    return records.filter(r => {
+      const d = new Date(r.date || r.punchIn);
+      return d >= activeCycle.startDate && d <= activeCycle.endDate;
+    });
+  }, [records, selectedCycleId, activeCycle]);
+
+  // ── Shift Distribution & Percentage Calculations ─────────────────────────
+  const shiftStats = useMemo(() => {
+    let s1 = 0, s2 = 0, s3 = 0, gen = 0;
+    let s1Hours = 0, s2Hours = 0, s3Hours = 0, genHours = 0;
+    let totalWorkHours = 0;
+    let totalOTHours = 0;
+    let onTimeCount = 0;
+
+    filteredRecords.forEach(r => {
+      const st = r.shiftStartTime || '';
+      const wHrs = parseFloat(r.totalHours || (r.punchIn ? 7.5 : 0));
+      const ot = parseFloat(r.overtimeHours || 0);
+
+      totalWorkHours += wHrs;
+      totalOTHours += ot;
+
+      if (!r.isLate) onTimeCount++;
+
+      if (st === '07:00' || st.includes('Shift 1') || st.includes('1st')) {
+        s1++;
+        s1Hours += wHrs;
+      } else if (st === '15:00' || st.includes('Shift 2') || st.includes('2nd')) {
+        s2++;
+        s2Hours += wHrs;
+      } else if (st === '23:00' || st.includes('Shift 3') || st.includes('3rd') || st.includes('Night')) {
+        s3++;
+        s3Hours += wHrs;
+      } else {
+        gen++;
+        genHours += wHrs;
+      }
+    });
+
+    const totalShifts = filteredRecords.length;
+    const computePct = (count) => (totalShifts > 0 ? parseFloat(((count / totalShifts) * 100).toFixed(1)) : 0);
+
+    return {
+      totalShifts,
+      totalWorkHours: parseFloat(totalWorkHours.toFixed(1)),
+      totalOTHours: parseFloat(totalOTHours.toFixed(1)),
+      onTimeRate: totalShifts > 0 ? Math.round((onTimeCount / totalShifts) * 100) : 100,
+      shifts: [
+        { ...SHIFT_CONFIG.shift1, count: s1, percentage: computePct(s1), hours: parseFloat(s1Hours.toFixed(1)) },
+        { ...SHIFT_CONFIG.shift2, count: s2, percentage: computePct(s2), hours: parseFloat(s2Hours.toFixed(1)) },
+        { ...SHIFT_CONFIG.shift3, count: s3, percentage: computePct(s3), hours: parseFloat(s3Hours.toFixed(1)) },
+        { ...SHIFT_CONFIG.general, count: gen, percentage: computePct(gen), hours: parseFloat(genHours.toFixed(1)) }
+      ]
+    };
+  }, [filteredRecords]);
+
   return (
     <View style={styles.container}>
       {/* Header Bar with Back Button */}
@@ -60,14 +220,13 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
           <Text style={styles.backBtnText}>◀ Back</Text>
         </TouchableOpacity>
 
-        {/* MPP Brand Logo */}
         <Image
           source={require('../../assets/icon.png')}
           style={styles.logoImage}
           resizeMode="contain"
         />
 
-        <Text style={styles.headerTitle}>Punching History Log</Text>
+        <Text style={styles.headerTitle}>Punching & Shift Analytics</Text>
       </View>
 
       {/* Action & Search Bar */}
@@ -77,7 +236,7 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
             {isSupervisorOrAdmin ? 'Search Employee Token #:' : `Punch Logs for Token #${user.employeeToken}`}
           </Text>
           <Text style={{ fontSize: 11, color: '#38bdf8', fontWeight: '700' }}>
-            {records.length} Entries
+            {filteredRecords.length} Entries in Cycle
           </Text>
         </View>
 
@@ -98,26 +257,140 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
         )}
       </View>
 
+      {/* ── Monthly Billing Cycle Selector Pills (26th to 25th) ─────────── */}
+      <View style={styles.cycleSelectorContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cycleScroll}>
+          {billingCycles.map(c => {
+            const isSelected = selectedCycleId === c.id;
+            return (
+              <TouchableOpacity
+                key={c.id}
+                style={[styles.cyclePill, isSelected && styles.cyclePillActive]}
+                onPress={() => setSelectedCycleId(c.id)}
+              >
+                <Text style={[styles.cyclePillText, isSelected && styles.cyclePillTextActive]}>
+                  {c.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#38bdf8" />}
       >
+        {/* ── Cycle Graphical Representation & Shift Percentage Card ─────── */}
+        <View style={styles.graphCard}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, marginRight: 6 }}>📊</Text>
+              <Text style={styles.graphTitle}>MONTHLY SHIFT CYCLE BREAKDOWN</Text>
+            </View>
+            <View style={styles.totalBadge}>
+              <Text style={styles.totalBadgeText}>{shiftStats.totalShifts} Shifts</Text>
+            </View>
+          </View>
+
+          {/* Graphical Proportional Segmented Cycle Bar */}
+          <View style={styles.segmentedBar}>
+            {shiftStats.totalShifts > 0 ? (
+              shiftStats.shifts.map(shift => {
+                if (shift.percentage <= 0) return null;
+                return (
+                  <View
+                    key={shift.id}
+                    style={{
+                      width: `${shift.percentage}%`,
+                      height: '100%',
+                      backgroundColor: shift.color,
+                    }}
+                  />
+                );
+              })
+            ) : (
+              <View style={{ width: '100%', height: '100%', backgroundColor: '#334155' }} />
+            )}
+          </View>
+
+          {/* Quick Stat Counters */}
+          <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+              <Text style={styles.statLabel}>Regular Hrs</Text>
+              <Text style={styles.statVal}>{shiftStats.totalWorkHours}h</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statLabel}>Overtime (OT)</Text>
+              <Text style={[styles.statVal, { color: '#fbbf24' }]}>+{shiftStats.totalOTHours}h</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statLabel}>On-Time</Text>
+              <Text style={[styles.statVal, { color: '#34d399' }]}>{shiftStats.onTimeRate}%</Text>
+            </View>
+          </View>
+
+          {/* Shift Count & Percentage Cards (Simultaneous Display) */}
+          <View style={{ marginTop: 12 }}>
+            {shiftStats.shifts.map(shift => (
+              <View
+                key={shift.id}
+                style={[
+                  styles.shiftCard,
+                  { borderLeftColor: shift.color, borderLeftWidth: 4 }
+                ]}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.shiftCardTitle, { color: shift.color }]}>
+                    {shift.name}
+                  </Text>
+
+                  {/* Simultaneous Count and Percentage */}
+                  <View style={[styles.pctBadge, { backgroundColor: shift.bgLight }]}>
+                    <Text style={[styles.pctBadgeText, { color: shift.color }]}>
+                      {shift.count} {shift.count === 1 ? 'Shift' : 'Shifts'} • {shift.percentage}%
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Progress Bar */}
+                <View style={styles.progressBarBg}>
+                  <View
+                    style={{
+                      width: `${shift.percentage}%`,
+                      height: '100%',
+                      backgroundColor: shift.color,
+                      borderRadius: 3,
+                    }}
+                  />
+                </View>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+                  <Text style={styles.shiftCardSub}>{shift.timeRange}</Text>
+                  <Text style={styles.shiftCardSub}>Worked: {shift.hours} hrs</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ── Attendance Log Header ── */}
         <View style={styles.bannerCard}>
-          <Text style={styles.bannerTitle}>📊 Monthly Punching & Attendance Logs</Text>
+          <Text style={styles.bannerTitle}>📅 Detailed Punching Log Entries</Text>
           <Text style={styles.bannerSubtitle}>
-            Viewing Token #{searchToken || user.employeeToken} • {records.length} Recorded Entries • 300m Plant Boundary
+            {activeCycle.label} • Token #{searchToken || user.employeeToken}
           </Text>
           <View style={styles.rulesBox}>
             <Text style={styles.rulesText}>
-              ⏱ Working Hours = 7h 30m (30m lunch deducted from 8h shift) • OT starts after 8h 30m presence (30m grace) • Salary Cycle: 26th to 25th
+              ⏱ Working Hours = 7h 30m (30m lunch deducted) • OT starts after 8.5h presence • Cycle: 26th to 25th
             </Text>
           </View>
         </View>
 
         {loading ? (
           <ActivityIndicator size="large" color="#38bdf8" style={{ marginTop: 40 }} />
-        ) : records.length > 0 ? (
-          records.map((att) => {
+        ) : filteredRecords.length > 0 ? (
+          filteredRecords.map((att) => {
             const dateStr = new Date(att.date).toLocaleDateString('en-IN', {
               weekday: 'short',
               month: 'short',
@@ -181,7 +454,7 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
             );
           })
         ) : (
-          <Text style={styles.emptyText}>No attendance records found for Token #{searchToken || user?.employeeToken}.</Text>
+          <Text style={styles.emptyText}>No attendance records found for Token #{searchToken || user?.employeeToken} in {activeCycle.label}.</Text>
         )}
       </ScrollView>
     </View>
@@ -260,9 +533,128 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  cycleSelectorContainer: {
+    backgroundColor: '#0f172a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+    paddingVertical: 8,
+  },
+  cycleScroll: {
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  cyclePill: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  cyclePillActive: {
+    backgroundColor: '#0284c7',
+    borderColor: '#38bdf8',
+  },
+  cyclePillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  cyclePillTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
   content: {
     padding: 16,
     paddingBottom: 40,
+  },
+  graphCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  graphTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#f8fafc',
+  },
+  totalBadge: {
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+  },
+  totalBadgeText: {
+    color: '#38bdf8',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  segmentedBar: {
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#090d16',
+    flexDirection: 'row',
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#090d16',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 4,
+  },
+  statBox: {
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  statVal: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#f8fafc',
+    marginTop: 2,
+  },
+  shiftCard: {
+    backgroundColor: '#090d16',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  shiftCardTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  pctBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  pctBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  progressBarBg: {
+    height: 5,
+    backgroundColor: '#1e293b',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginVertical: 4,
+  },
+  shiftCardSub: {
+    fontSize: 10,
+    color: '#64748b',
   },
   bannerCard: {
     backgroundColor: '#1e293b',
@@ -273,7 +665,7 @@ const styles = StyleSheet.create({
     borderLeftColor: '#38bdf8',
   },
   bannerTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     color: '#f8fafc',
   },
