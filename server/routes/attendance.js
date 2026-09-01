@@ -5,50 +5,83 @@ const Employee = require('../models/Employee');
 const User = require('../models/User');
 const ShiftSchedule = require('../models/ShiftSchedule');
 
-// Helper to get shift start time for today (Default General: 08:30 AM, 1st: 07:00 AM, 2nd: 03:00 PM, 3rd: 11:00 PM)
+// ── Intelligent Multi-Shift Arrival Window & Start Time Auto-Detector ─────
+// Rules:
+// 1. Shift 1 (1st Shift: 07:00 AM – 03:00 PM): Punch-in window 06:00 AM – 07:30 AM -> Shift Start 07:00
+// 2. General Shift (08:30 AM – 04:30 PM): Punch-in window 08:00 AM – 09:00 AM -> Shift Start 08:30
+// 3. Shift 2 (2nd Shift: 03:00 PM – 11:00 PM): Punch-in window 02:00 PM – 03:30 PM -> Shift Start 15:00
+// 4. Shift 3 (Night Shift: 11:00 PM – 07:00 AM): Punch-in window 10:00 PM – 11:30 PM -> Shift Start 23:00
+// 5. Fallback: Matches to closest logical shift start time
 const getAssignedShiftStart = async (tokenNo, now) => {
   try {
-    const latestRoster = await ShiftSchedule.findOne({ status: 'Published' }).sort({ createdAt: -1 });
-    let shiftType = 'General Shift (08.30AM-04.30PM)';
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
+    let startHour = 7;
+    let startMin = 0;
+    let shiftName = 'Shift 1 (07:00 AM - 03:00 PM)';
+
+    // Dynamic arrival window matching
+    if (currentMinutes >= 360 && currentMinutes <= 465) {
+      // 06:00 AM to 07:45 AM -> 1st Shift (07:00)
+      startHour = 7;
+      startMin = 0;
+      shiftName = 'Shift 1 (07:00 AM - 03:00 PM)';
+    } else if (currentMinutes > 465 && currentMinutes <= 690) {
+      // 07:45 AM to 11:30 AM -> General Shift (08:30)
+      startHour = 8;
+      startMin = 30;
+      shiftName = 'General Shift (08:30 AM - 04:30 PM)';
+    } else if (currentMinutes > 690 && currentMinutes <= 1230) {
+      // 11:30 AM to 08:30 PM (02:00 PM - 03:30 PM arrival window) -> 2nd Shift (15:00)
+      startHour = 15;
+      startMin = 0;
+      shiftName = 'Shift 2 (03:00 PM - 11:00 PM)';
+    } else {
+      // 08:30 PM to 06:00 AM (10:00 PM - 11:30 PM arrival window) -> 3rd Shift (23:00)
+      startHour = 23;
+      startMin = 0;
+      shiftName = 'Shift 3 (11:00 PM - 07:00 AM)';
+    }
+
+    // Check if latest published roster specifically assigned a shift
+    const latestRoster = await ShiftSchedule.findOne({ status: 'Published' }).sort({ createdAt: -1 });
     if (latestRoster && latestRoster.shifts) {
       latestRoster.shifts.forEach(slot => {
-        slot.allocations.forEach(alloc => {
+        slot.allocations?.forEach(alloc => {
           if (alloc.assignedEmployees && alloc.assignedEmployees.some(e => e.tokenNo === tokenNo)) {
-            shiftType = slot.shiftType;
+            const st = slot.shiftType || '';
+            if ((st.includes('Shift-1') || st.includes('07.00AM')) && currentMinutes < 600) {
+              startHour = 7;
+              startMin = 0;
+              shiftName = 'Shift 1 (07:00 AM - 03:00 PM)';
+            } else if ((st.includes('Shift-2') || st.includes('03.00PM')) && currentMinutes >= 720 && currentMinutes < 1260) {
+              startHour = 15;
+              startMin = 0;
+              shiftName = 'Shift 2 (03:00 PM - 11:00 PM)';
+            } else if ((st.includes('Shift-3') || st.includes('11.00PM')) && (currentMinutes >= 1200 || currentMinutes < 360)) {
+              startHour = 23;
+              startMin = 0;
+              shiftName = 'Shift 3 (11:00 PM - 07:00 AM)';
+            }
           }
         });
       });
     }
 
-    // Default start times
-    let startHour = 8;
-    let startMin = 30; // General Shift default 08:30 AM
-
-    if (shiftType.includes('Shift-1') || shiftType.includes('07.00AM')) {
-      startHour = 7;
-      startMin = 0; // 1st Shift 07:00 AM
-    } else if (shiftType.includes('Shift-2') || shiftType.includes('03.00PM')) {
-      startHour = 15;
-      startMin = 0; // 2nd Shift 03:00 PM
-    } else if (shiftType.includes('Shift-3') || shiftType.includes('11.00PM')) {
-      startHour = 23;
-      startMin = 0; // 3rd Shift 11:00 PM
-    }
-
     const shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, startMin, 0);
-    // 10-minute grace period threshold for late check
+    // 10-minute grace cutoff threshold
     const graceCutoffDate = new Date(shiftStartDate.getTime() + 10 * 60 * 1000);
 
     return {
       shiftStartDate,
       graceCutoffDate,
-      shiftLabel: `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`
+      shiftLabel: `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`,
+      shiftName,
     };
   } catch (err) {
-    const shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 30, 0);
+    const shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 7, 0, 0);
     const graceCutoffDate = new Date(shiftStartDate.getTime() + 10 * 60 * 1000);
-    return { shiftStartDate, graceCutoffDate, shiftLabel: '08:30' };
+    return { shiftStartDate, graceCutoffDate, shiftLabel: '07:00', shiftName: 'Shift 1 (07:00 AM - 03:00 PM)' };
   }
 };
 
@@ -100,12 +133,12 @@ router.post('/punch-in', async (req, res) => {
       return res.status(400).json({ message: 'Already punched in for today.', attendance: record });
     }
 
-    const { shiftStartDate, graceCutoffDate, shiftLabel } = await getAssignedShiftStart(trimmedToken, now);
+    const { shiftStartDate, graceCutoffDate, shiftLabel, shiftName } = await getAssignedShiftStart(trimmedToken, now);
 
     const isLate = now > graceCutoffDate;
     let lateMinutes = 0;
     if (isLate) {
-      lateMinutes = Math.round((now - shiftStartDate) / (1000 * 60));
+      lateMinutes = Math.max(0, Math.round((now - shiftStartDate) / (1000 * 60)));
     }
 
     const isSunday = now.getDay() === 0;
@@ -135,14 +168,14 @@ router.post('/punch-in', async (req, res) => {
 
     if (isLate) {
       return res.status(201).json({
-        message: `Punched In at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice} (LATE by ${lateMinutes} mins). Recorded! Pending Late Approval.`,
+        message: `Punched In at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${geoNotice} [${shiftName}] (LATE by ${lateMinutes} mins). Recorded! Pending Late Approval.`,
         attendance: record,
         isLate: true
       });
     }
 
     res.status(201).json({
-      message: `Punched In successfully on time (${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})${geoNotice}!`,
+      message: `Punched In successfully on time (${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}) [${shiftName}]${geoNotice}!`,
       attendance: record,
       isLate: false
     });
@@ -335,4 +368,43 @@ router.get('/today', async (req, res) => {
   }
 });
 
+// Recalculate Past Attendance Records to Correct Shift Start Times & Clear False LATE Flags
+router.post('/recalculate-shifts', async (req, res) => {
+  try {
+    const records = await Attendance.find({ punchIn: { $exists: true, $ne: null } });
+    let updatedCount = 0;
+
+    for (const record of records) {
+      const punchInDate = new Date(record.punchIn);
+      const { shiftStartDate, graceCutoffDate, shiftLabel } = await getAssignedShiftStart(record.tokenNo, punchInDate);
+
+      const isLate = punchInDate > graceCutoffDate;
+      const lateMinutes = isLate ? Math.max(0, Math.round((punchInDate - shiftStartDate) / (1000 * 60))) : 0;
+
+      record.shiftStartTime = shiftLabel;
+      record.isLate = isLate;
+      record.lateMinutes = lateMinutes;
+
+      if (!isLate && (record.status === 'Pending Late Approval' || record.status === 'In Progress')) {
+        record.status = record.punchOut ? 'Present' : 'In Progress';
+        record.supervisorApproved = true;
+      } else if (!isLate && record.status === 'Present') {
+        record.supervisorApproved = true;
+      }
+
+      await record.save();
+      updatedCount++;
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully recalculated ${updatedCount} attendance records with true shift start times and cleared false late penalties!`,
+      updatedCount,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.getAssignedShiftStart = getAssignedShiftStart;
 module.exports = router;

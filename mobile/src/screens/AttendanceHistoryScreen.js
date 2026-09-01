@@ -142,7 +142,12 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
 
                 <View style={styles.row}>
                   <Text style={styles.label}>Shift Start:</Text>
-                  <Text style={[styles.value, { color: '#38bdf8' }]}>{att.shiftStartTime || '08:30'}</Text>
+                  <Text style={[styles.value, { color: '#38bdf8' }]}>
+                    {att.shiftStartTime === '07:00' ? '07:00 (1st Shift)' :
+                     att.shiftStartTime === '15:00' ? '15:00 (2nd Shift)' :
+                     att.shiftStartTime === '23:00' ? '23:00 (3rd Shift)' :
+                     att.shiftStartTime === '08:30' ? '08:30 (Gen Shift)' : (att.shiftStartTime || '08:30')}
+                  </Text>
                 </View>
 
                 <View style={styles.row}>

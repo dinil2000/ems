@@ -121,10 +121,23 @@ const AttendanceHistoryPage = () => {
                   const punchInStr = att.punchIn ? new Date(att.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A';
                   const punchOutStr = att.punchOut ? new Date(att.punchOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A';
 
+                  const formatShiftName = (st) => {
+                    if (!st) return '08:30 (Gen)';
+                    if (st === '07:00') return '07:00 (1st Shift)';
+                    if (st === '15:00') return '15:00 (2nd Shift)';
+                    if (st === '23:00') return '23:00 (3rd Shift)';
+                    if (st === '08:30') return '08:30 (Gen Shift)';
+                    return st;
+                  };
+
                   return (
                     <tr key={att._id}>
                       <td><strong>{dateStr}</strong></td>
-                      <td>{att.shiftStartTime || '08:30'}</td>
+                      <td>
+                        <span style={{ fontWeight: 600, color: '#38bdf8' }}>
+                          {formatShiftName(att.shiftStartTime)}
+                        </span>
+                      </td>
                       <td style={{ color: '#34d399', fontWeight: 600 }}>{punchInStr}</td>
                       <td style={{ color: att.punchOut ? '#38bdf8' : '#f87171', fontWeight: 600 }}>{punchOutStr}</td>
                       <td style={{ fontWeight: 700, color: '#f8fafc' }}>
