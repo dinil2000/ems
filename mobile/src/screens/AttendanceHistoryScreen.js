@@ -533,7 +533,7 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
                   style={styles.deleteRecordBtn}
                   onPress={() => handleDeleteRecord(att._id, dateStr)}
                 >
-                  <Text style={styles.deleteRecordBtnText}>🗑️ Delete Record</Text>
+                  <Text style={styles.deleteRecordBtnText}>🗑️ Delete Accidental Punch Record</Text>
                 </TouchableOpacity>
               </View>
             );

@@ -372,6 +372,82 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     }
   };
 
+  const handleDeleteRecord = (id, dateStr) => {
+    Alert.alert(
+      'Delete Attendance Record',
+      `Are you sure you want to delete the punch record for ${dateStr}?\n\nThis will remove the punch and recalculate your cycle hours.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const urls = await getApiUrlList();
+              let deleted = false;
+              for (const url of urls) {
+                try {
+                  await axios.delete(`${url}/attendance/${id}`, { timeout: 6000 });
+                  deleted = true;
+                  break;
+                } catch (e) {}
+              }
+              if (deleted) {
+                Alert.alert('Deleted', 'Attendance record deleted successfully.');
+                await fetchStatus();
+              } else {
+                Alert.alert('Error', 'Unable to delete attendance record.');
+              }
+            } catch (err) {
+              Alert.alert('Error', err.message);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleCancelActivePunch = () => {
+    if (!attendance || !attendance._id) return;
+    const punchTimeStr = attendance.punchIn ? new Date(attendance.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'today';
+    Alert.alert(
+      'Cancel / Delete Active Punch-In',
+      `Did you punch in accidentally at ${punchTimeStr}?\n\nThis will delete your active punch-in and reset your shift status to OFF SHIFT.`,
+      [
+        { text: 'Keep Active', style: 'cancel' },
+        {
+          text: 'Delete Punch-In',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              const urls = await getApiUrlList();
+              let deleted = false;
+              for (const url of urls) {
+                try {
+                  await axios.delete(`${url}/attendance/${attendance._id}`, { timeout: 6000 });
+                  deleted = true;
+                  break;
+                } catch (e) {}
+              }
+              if (deleted) {
+                await syncAlarmState(false);
+                await fetchStatus();
+                Alert.alert('Punch-In Removed', 'Your accidental punch-in has been deleted and shift status reset.');
+              } else {
+                Alert.alert('Error', 'Unable to delete active punch.');
+              }
+            } catch (err) {
+              Alert.alert('Error', err.message);
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const isPunchedIn = attendance && (attendance.status === 'In Progress' || attendance.status === 'Pending Late Approval' || (attendance.punchIn && !attendance.punchOut));
   const isInside300m = distanceMeters !== null && distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius;
 
@@ -486,9 +562,15 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         </View>
 
         {isPunchedIn ? (
-          <TouchableOpacity style={styles.punchOutBtn} onPress={handlePunchOut} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.punchBtnText}>🔴 PUNCH OUT NOW</Text>}
-          </TouchableOpacity>
+          <View style={{ gap: 8 }}>
+            <TouchableOpacity style={styles.punchOutBtn} onPress={handlePunchOut} disabled={loading}>
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.punchBtnText}>🔴 PUNCH OUT NOW</Text>}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.cancelPunchBtn} onPress={handleCancelActivePunch} disabled={loading}>
+              <Text style={styles.cancelPunchBtnText}>🗑️ Cancel / Delete Unwanted Punch-In</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <TouchableOpacity style={styles.punchInBtn} onPress={handlePunchIn} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.punchBtnText}>🟢 PUNCH IN NOW</Text>}
@@ -556,13 +638,19 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
                     In: {inTime} • Out: {outTime}
                   </Text>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
+                <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
                   <Text style={styles.logHours}>
                     {rec.totalHours ? `${rec.totalHours} hrs` : 'In Progress'}
                   </Text>
                   <Text style={[styles.logOt, rec.overtimeHours > 0 && { color: '#fbbf24' }]}>
                     OT: {rec.overtimeHours > 0 ? `+${rec.overtimeHours} hrs` : '0 hrs'}
                   </Text>
+                  <TouchableOpacity
+                    style={styles.deleteMiniBtn}
+                    onPress={() => handleDeleteRecord(rec._id, dateStr)}
+                  >
+                    <Text style={styles.deleteMiniBtnText}>🗑️ Delete</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             );
@@ -1030,6 +1118,34 @@ const styles = StyleSheet.create({
   modalCloseText: {
     color: '#f8fafc',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  cancelPunchBtn: {
+    backgroundColor: 'rgba(244, 63, 94, 0.15)',
+    borderWidth: 1,
+    borderColor: '#f43f5e',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelPunchBtnText: {
+    color: '#f87171',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  deleteMiniBtn: {
+    backgroundColor: 'rgba(244, 63, 94, 0.15)',
+    borderWidth: 1,
+    borderColor: '#f43f5e',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+    marginTop: 4,
+  },
+  deleteMiniBtnText: {
+    color: '#f87171',
+    fontSize: 10,
     fontWeight: '700',
   },
 });
