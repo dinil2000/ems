@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { Calendar, MapPin, Search, PieChart, Clock, Award, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Calendar, MapPin, Search, PieChart, Clock, Award, CheckCircle2, ChevronRight, Trash2 } from 'lucide-react';
 
 const SHIFT_CONFIG = {
   shift1: {
@@ -59,6 +59,18 @@ const AttendanceHistoryPage = () => {
       console.error('Error fetching attendance history:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteRecord = async (id, dateStr) => {
+    if (!window.confirm(`Are you sure you want to delete the attendance punch record for ${dateStr}? This will remove the punch and recalculate your cycle hours.`)) {
+      return;
+    }
+    try {
+      await axios.delete(`${API_BASE}/attendance/${id}`);
+      setRecords(prev => prev.filter(r => r._id !== id));
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete attendance record.');
     }
   };
 
@@ -503,6 +515,7 @@ const AttendanceHistoryPage = () => {
                   <th>Overtime (OT)</th>
                   <th>Status</th>
                   <th>GPS Location</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -551,6 +564,29 @@ const AttendanceHistoryPage = () => {
                           <MapPin size={13} style={{ color: '#10b981' }} />
                           <span>Keltron Kannur Plant (300m Verified)</span>
                         </div>
+                      </td>
+                      <td>
+                        <button
+                          onClick={() => handleDeleteRecord(att._id, dateStr)}
+                          style={{
+                            backgroundColor: 'rgba(244, 63, 94, 0.12)',
+                            border: '1px solid #f43f5e',
+                            color: '#f87171',
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.2s'
+                          }}
+                          title="Delete accidental/unwanted punch"
+                        >
+                          <Trash2 size={13} />
+                          <span>Delete</span>
+                        </button>
                       </td>
                     </tr>
                   );

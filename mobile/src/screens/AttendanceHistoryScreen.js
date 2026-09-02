@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
+  Alert,
 } from 'react-native';
 import Svg, { Circle, G, Text as SvgText } from 'react-native-svg';
 import axios from 'axios';
@@ -90,6 +91,41 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
     setRefreshing(true);
     await fetchHistory();
     setRefreshing(false);
+  };
+
+  const handleDeleteRecord = (id, dateStr) => {
+    Alert.alert(
+      'Delete Attendance Record',
+      `Are you sure you want to delete the punch record for ${dateStr}?\n\nThis will remove the punch-in/out and recalculate your cycle hours.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const urls = await getApiUrlList();
+              let deleted = false;
+              for (const url of urls) {
+                try {
+                  await axios.delete(`${url}/attendance/${id}`, { timeout: 6000 });
+                  deleted = true;
+                  break;
+                } catch (e) {}
+              }
+              if (deleted) {
+                setRecords(prev => prev.filter(r => r._id !== id));
+                Alert.alert('Deleted', 'Attendance punch record has been removed.');
+              } else {
+                Alert.alert('Error', 'Unable to delete attendance record.');
+              }
+            } catch (err) {
+              Alert.alert('Error', err.message);
+            }
+          }
+        }
+      ]
+    );
   };
 
   // ── Compute Standard Monthly Billing Cycles (26th to 25th) ───────────────
@@ -491,6 +527,14 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
                 <View style={styles.locationTag}>
                   <Text style={styles.locationText}>📍 Keltron Kannur Plant (300m Geofence Verified)</Text>
                 </View>
+
+                {/* Delete / Remove Accidental Punch Record */}
+                <TouchableOpacity
+                  style={styles.deleteRecordBtn}
+                  onPress={() => handleDeleteRecord(att._id, dateStr)}
+                >
+                  <Text style={styles.deleteRecordBtnText}>🗑️ Delete Record</Text>
+                </TouchableOpacity>
               </View>
             );
           })
@@ -801,5 +845,21 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     textAlign: 'center',
     marginTop: 30,
+  },
+  deleteRecordBtn: {
+    backgroundColor: 'rgba(244, 63, 94, 0.12)',
+    borderWidth: 1,
+    borderColor: '#f43f5e',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginTop: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteRecordBtnText: {
+    color: '#f87171',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

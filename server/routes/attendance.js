@@ -406,5 +406,19 @@ router.post('/recalculate-shifts', async (req, res) => {
   }
 });
 
+// Delete / Remove an Attendance Record (e.g. accidental or unwanted punch)
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await Attendance.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ message: 'Attendance record not found.' });
+    }
+    res.json({ success: true, message: 'Attendance record deleted successfully.', deletedRecord: deleted });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 router.getAssignedShiftStart = getAssignedShiftStart;
 module.exports = router;
