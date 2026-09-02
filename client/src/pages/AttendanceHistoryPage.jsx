@@ -183,8 +183,21 @@ const AttendanceHistoryPage = () => {
     });
 
     const totalShifts = filteredRecords.length;
-
     const computePct = (count) => (totalShifts > 0 ? parseFloat(((count / totalShifts) * 100).toFixed(1)) : 0);
+
+    const baseShifts = [
+      { ...SHIFT_CONFIG.shift1, count: s1, percentage: computePct(s1), hours: parseFloat(s1Hours.toFixed(1)) },
+      { ...SHIFT_CONFIG.shift2, count: s2, percentage: computePct(s2), hours: parseFloat(s2Hours.toFixed(1)) },
+      { ...SHIFT_CONFIG.shift3, count: s3, percentage: computePct(s3), hours: parseFloat(s3Hours.toFixed(1)) },
+      { ...SHIFT_CONFIG.general, count: gen, percentage: computePct(gen), hours: parseFloat(genHours.toFixed(1)) }
+    ];
+
+    let acc = 0;
+    const shifts = baseShifts.map(s => {
+      const offset = acc;
+      acc += s.percentage;
+      return { ...s, offset };
+    });
 
     return {
       totalShifts,
@@ -193,19 +206,13 @@ const AttendanceHistoryPage = () => {
       onTimeCount,
       lateCount,
       onTimeRate: totalShifts > 0 ? Math.round((onTimeCount / totalShifts) * 100) : 100,
-      shifts: [
-        { ...SHIFT_CONFIG.shift1, count: s1, percentage: computePct(s1), hours: parseFloat(s1Hours.toFixed(1)) },
-        { ...SHIFT_CONFIG.shift2, count: s2, percentage: computePct(s2), hours: parseFloat(s2Hours.toFixed(1)) },
-        { ...SHIFT_CONFIG.shift3, count: s3, percentage: computePct(s3), hours: parseFloat(s3Hours.toFixed(1)) },
-        { ...SHIFT_CONFIG.general, count: gen, percentage: computePct(gen), hours: parseFloat(genHours.toFixed(1)) }
-      ]
+      shifts
     };
   }, [filteredRecords]);
 
   // ── SVG Donut Chart Geometry ─────────────────────────────────────────────
   const radius = 68;
   const circumference = 2 * Math.PI * radius;
-  let accumulatedPercent = 0;
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1.5rem 1rem' }}>
@@ -330,8 +337,7 @@ const AttendanceHistoryPage = () => {
                   shiftStats.shifts.map(shift => {
                     if (shift.percentage <= 0) return null;
                     const strokeDasharray = `${(shift.percentage / 100) * circumference} ${circumference}`;
-                    const strokeDashoffset = -((accumulatedPercent / 100) * circumference);
-                    accumulatedPercent += shift.percentage;
+                    const strokeDashoffset = -((shift.offset / 100) * circumference);
 
                     return (
                       <circle

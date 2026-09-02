@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, BackHandler, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, BackHandler, Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Ensure TaskManager background tasks are defined globally at root level
@@ -275,36 +275,47 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   tabBar: {
+    width: '100%',
     flexDirection: 'row',
     backgroundColor: '#1e293b',
     borderTopWidth: 1,
     borderTopColor: '#334155',
-    paddingBottom: 14,
-    paddingTop: 6,
-    paddingHorizontal: 6,
-    justifyContent: 'space-around',
+    paddingBottom: Platform.OS === 'android' ? 12 : 24,
+    paddingTop: 8,
+    paddingHorizontal: 4,
+    justifyContent: 'space-evenly',
     alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
   },
   tabItem: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
     borderRadius: 8,
+    marginHorizontal: 2,
   },
   tabActive: {
-    backgroundColor: 'rgba(2, 132, 199, 0.2)',
+    backgroundColor: 'rgba(2, 132, 199, 0.25)',
     borderTopWidth: 2,
     borderTopColor: '#38bdf8',
   },
   tabIcon: {
-    fontSize: 17,
+    fontSize: 18,
     marginBottom: 2,
+    textAlign: 'center',
   },
   tabText: {
     fontSize: 10,
     color: '#94a3b8',
     fontWeight: '600',
+    textAlign: 'center',
   },
   tabTextActive: {
     color: '#38bdf8',
