@@ -12,83 +12,66 @@ const ShiftSchedule = require('../models/ShiftSchedule');
 // 3. Shift 2 (2nd Shift: 03:00 PM – 11:00 PM): Punch-in window 02:00 PM – 03:30 PM -> Shift Start 15:00
 // 4. Shift 3 (Night Shift: 11:00 PM – 07:00 AM): Punch-in window 10:00 PM – 11:30 PM -> Shift Start 23:00
 // 5. Fallback: Matches to closest logical shift start time
-const getAssignedShiftStart = async (tokenNo, now) => {
-  try {
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+const detectShiftDetails = (date = new Date()) => {
+  const currentMinutes = date.getHours() * 60 + date.getMinutes();
 
-    let startHour = 7;
-    let startMin = 0;
-    let shiftName = 'Shift 1 (07:00 AM - 03:00 PM)';
+  let startHour, startMin, shiftLabel, shiftName;
 
-    // Dynamic arrival window matching
-    if (currentMinutes >= 360 && currentMinutes <= 465) {
-      // 06:00 AM to 07:45 AM -> 1st Shift (07:00)
-      startHour = 7;
-      startMin = 0;
-      shiftName = 'Shift 1 (07:00 AM - 03:00 PM)';
-    } else if (currentMinutes > 465 && currentMinutes <= 690) {
-      // 07:45 AM to 11:30 AM -> General Shift (08:30)
-      startHour = 8;
-      startMin = 30;
-      shiftName = 'General Shift (08:30 AM - 04:30 PM)';
-    } else if (currentMinutes > 690 && currentMinutes <= 1230) {
-      // 11:30 AM to 08:30 PM (02:00 PM - 03:30 PM arrival window) -> 2nd Shift (15:00)
-      startHour = 15;
-      startMin = 0;
-      shiftName = 'Shift 2 (03:00 PM - 11:00 PM)';
-    } else {
-      // 08:30 PM to 06:00 AM (10:00 PM - 11:30 PM arrival window) -> 3rd Shift (23:00)
-      startHour = 23;
-      startMin = 0;
-      shiftName = 'Shift 3 (11:00 PM - 07:00 AM)';
-    }
+  // Exact shift rules with 1 hr early arrival and 30m punch window:
+  // - Shift 1: 07:00 AM – 03:00 PM (Start 07:00, 1 hr early 06:00 AM, window up to 07:30 AM / 07:45 AM)
+  // - General Shift: 08:30 AM – 04:30 PM (Start 08:30, 1 hr early 07:30 AM, window up to 09:00 AM / 01:45 PM)
+  // - Shift 2: 03:00 PM – 11:00 PM (Start 15:00, 1 hr early 02:00 PM, window up to 03:30 PM / 08:30 PM)
+  // - Shift 3: 11:00 PM – 07:00 AM (Start 23:00, 1 hr early 10:00 PM, window up to 11:30 PM / 06:00 AM)
 
-    // Check if latest published roster specifically assigned a shift
-    const latestRoster = await ShiftSchedule.findOne({ status: 'Published' }).sort({ createdAt: -1 });
-    if (latestRoster && latestRoster.shifts) {
-      latestRoster.shifts.forEach(slot => {
-        slot.allocations?.forEach(alloc => {
-          if (alloc.assignedEmployees && alloc.assignedEmployees.some(e => e.tokenNo === tokenNo)) {
-            const st = slot.shiftType || '';
-            if ((st.includes('Shift-1') || st.includes('07.00AM')) && currentMinutes < 600) {
-              startHour = 7;
-              startMin = 0;
-              shiftName = 'Shift 1 (07:00 AM - 03:00 PM)';
-            } else if ((st.includes('Shift-2') || st.includes('03.00PM')) && currentMinutes >= 720 && currentMinutes < 1260) {
-              startHour = 15;
-              startMin = 0;
-              shiftName = 'Shift 2 (03:00 PM - 11:00 PM)';
-            } else if ((st.includes('Shift-3') || st.includes('11.00PM')) && (currentMinutes >= 1200 || currentMinutes < 360)) {
-              startHour = 23;
-              startMin = 0;
-              shiftName = 'Shift 3 (11:00 PM - 07:00 AM)';
-            }
-          }
-        });
-      });
-    }
-
-    // Shift start date: For Shift 3 (23:00) when punched in after midnight (e.g. 00:00 - 06:00), shift started yesterday
-    let shiftStartDate;
-    if (startHour === 23 && now.getHours() < 12) {
-      shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 0, 0);
-    } else {
-      shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, startMin, 0);
-    }
-    // 10-minute grace cutoff threshold
-    const graceCutoffDate = new Date(shiftStartDate.getTime() + 10 * 60 * 1000);
-
-    return {
-      shiftStartDate,
-      graceCutoffDate,
-      shiftLabel: `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`,
-      shiftName,
-    };
-  } catch (err) {
-    const shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 7, 0, 0);
-    const graceCutoffDate = new Date(shiftStartDate.getTime() + 10 * 60 * 1000);
-    return { shiftStartDate, graceCutoffDate, shiftLabel: '07:00', shiftName: 'Shift 1 (07:00 AM - 03:00 PM)' };
+  if (currentMinutes >= 360 && currentMinutes < 465) {
+    // 06:00 AM to 07:45 AM -> 1st Shift (07:00 AM - 03:00 PM)
+    startHour = 7;
+    startMin = 0;
+    shiftLabel = '07:00';
+    shiftName = 'Shift 1 (07:00 AM - 03:00 PM)';
+  } else if (currentMinutes >= 465 && currentMinutes < 825) {
+    // 07:45 AM to 01:45 PM -> General Shift (08:30 AM - 04:30 PM)
+    startHour = 8;
+    startMin = 30;
+    shiftLabel = '08:30';
+    shiftName = 'General Shift (08:30 AM - 04:30 PM)';
+  } else if (currentMinutes >= 825 && currentMinutes < 1230) {
+    // 01:45 PM to 08:30 PM (14:00/2 PM early arrival, 2:45 PM punch, up to 15:30/3:30 PM) -> 2nd Shift (03:00 PM - 11:00 PM)
+    startHour = 15;
+    startMin = 0;
+    shiftLabel = '15:00';
+    shiftName = 'Shift 2 (03:00 PM - 11:00 PM)';
+  } else {
+    // 08:30 PM to 06:00 AM (22:00/10 PM early arrival, 11:00 PM start, up to 23:30/11:30 PM) -> 3rd Shift (11:00 PM - 07:00 AM)
+    startHour = 23;
+    startMin = 0;
+    shiftLabel = '23:00';
+    shiftName = 'Shift 3 (11:00 PM - 07:00 AM)';
   }
+
+  // Shift start date anchor
+  let shiftStartDate;
+  if (startHour === 23 && date.getHours() < 12) {
+    shiftStartDate = new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1, 23, 0, 0);
+  } else {
+    shiftStartDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMin, 0);
+  }
+
+  // 10-minute grace cutoff threshold (e.g. 07:10 AM, 08:40 AM, 03:10 PM, 11:10 PM)
+  const graceCutoffDate = new Date(shiftStartDate.getTime() + 10 * 60 * 1000);
+
+  return {
+    startHour,
+    startMin,
+    shiftStartDate,
+    graceCutoffDate,
+    shiftLabel,
+    shiftName,
+  };
+};
+
+const getAssignedShiftStart = async (tokenNo, now) => {
+  return detectShiftDetails(now);
 };
 
 /*
@@ -155,7 +138,7 @@ router.post('/punch-in', async (req, res) => {
     const supervisorApproved = !isLate;
     const status = isLate ? 'Pending Late Approval' : 'In Progress';
 
-    record = await Attendance.create({
+    const record = await Attendance.create({
       employeeId: employee._id,
       tokenNo: employee.tokenNo,
       date: now,
@@ -381,7 +364,7 @@ router.get('/today', async (req, res) => {
   }
 });
 
-// Recalculate Past Attendance Records to Correct Shift Start Times & Clear False LATE Flags
+// Recalculate Past Attendance Records to Correct Shift Start Times, Hours & Clear False LATE Flags
 router.post('/recalculate-shifts', async (req, res) => {
   try {
     const records = await Attendance.find({ punchIn: { $exists: true, $ne: null } });
@@ -398,10 +381,43 @@ router.post('/recalculate-shifts', async (req, res) => {
       record.isLate = isLate;
       record.lateMinutes = lateMinutes;
 
-      if (!isLate && (record.status === 'Pending Late Approval' || record.status === 'In Progress')) {
-        record.status = record.punchOut ? 'Present' : 'In Progress';
-        record.supervisorApproved = true;
-      } else if (!isLate && record.status === 'Present') {
+      // Recalculate true working hours & overtime hours
+      if (record.punchIn && record.punchOut) {
+        const pIn = new Date(record.punchIn);
+        const pOut = new Date(record.punchOut);
+        const diffMs = Math.max(0, pOut - pIn);
+        const totalRawHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+
+        const LUNCH_DEDUCTION = 0.5;
+        const STANDARD_WORKING = 7.5;
+        const SHIFT_DURATION = 8.0;
+        const OT_THRESHOLD = 8.5;
+
+        let workingHours;
+        let overtimeHrs;
+
+        if (totalRawHrs >= SHIFT_DURATION) {
+          workingHours = STANDARD_WORKING;
+        } else if (totalRawHrs > LUNCH_DEDUCTION) {
+          workingHours = parseFloat((totalRawHrs - LUNCH_DEDUCTION).toFixed(2));
+        } else {
+          workingHours = parseFloat(totalRawHrs.toFixed(2));
+        }
+
+        if (totalRawHrs > OT_THRESHOLD) {
+          overtimeHrs = parseFloat((totalRawHrs - SHIFT_DURATION).toFixed(2));
+        } else {
+          overtimeHrs = 0;
+        }
+
+        record.totalHours = workingHours;
+        record.overtimeHours = overtimeHrs;
+        record.status = (!isLate || record.supervisorApproved) ? 'Present' : 'Pending Late Approval';
+      } else {
+        record.status = isLate ? 'Pending Late Approval' : 'In Progress';
+      }
+
+      if (!isLate) {
         record.supervisorApproved = true;
       }
 
@@ -411,7 +427,7 @@ router.post('/recalculate-shifts', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Successfully recalculated ${updatedCount} attendance records with true shift start times and cleared false late penalties!`,
+      message: `Successfully recalculated ${updatedCount} attendance records with true shift start times, working hours, and cleared false late penalties!`,
       updatedCount,
     });
   } catch (error) {

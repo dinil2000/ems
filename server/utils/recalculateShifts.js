@@ -28,16 +28,48 @@ async function runFix() {
     record.isLate = isLate;
     record.lateMinutes = lateMinutes;
 
-    if (!isLate) {
-      if (record.status === 'Pending Late Approval' || record.status === 'In Progress') {
-        record.status = record.punchOut ? 'Present' : 'In Progress';
+    if (record.punchIn && record.punchOut) {
+      const pIn = new Date(record.punchIn);
+      const pOut = new Date(record.punchOut);
+      const diffMs = Math.max(0, pOut - pIn);
+      const totalRawHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+
+      const LUNCH_DEDUCTION = 0.5;
+      const STANDARD_WORKING = 7.5;
+      const SHIFT_DURATION = 8.0;
+      const OT_THRESHOLD = 8.5;
+
+      let workingHours;
+      let overtimeHrs;
+
+      if (totalRawHrs >= SHIFT_DURATION) {
+        workingHours = STANDARD_WORKING;
+      } else if (totalRawHrs > LUNCH_DEDUCTION) {
+        workingHours = parseFloat((totalRawHrs - LUNCH_DEDUCTION).toFixed(2));
+      } else {
+        workingHours = parseFloat(totalRawHrs.toFixed(2));
       }
+
+      if (totalRawHrs > OT_THRESHOLD) {
+        overtimeHrs = parseFloat((totalRawHrs - SHIFT_DURATION).toFixed(2));
+      } else {
+        overtimeHrs = 0;
+      }
+
+      record.totalHours = workingHours;
+      record.overtimeHours = overtimeHrs;
+      record.status = (!isLate || record.supervisorApproved) ? 'Present' : 'Pending Late Approval';
+    } else {
+      record.status = isLate ? 'Pending Late Approval' : 'In Progress';
+    }
+
+    if (!isLate) {
       record.supervisorApproved = true;
     }
 
     await record.save();
     updatedCount++;
-    console.log(`[Token #${record.tokenNo}] Date: ${punchInDate.toDateString()} | In: ${punchInDate.toLocaleTimeString()} -> Shift: ${shiftLabel} (${shiftName}) | Old: ${oldShift} (Late:${oldLate}) -> New: ${shiftLabel} (Late:${isLate}, ${lateMinutes}m)`);
+    console.log(`[Token #${record.tokenNo}] Date: ${punchInDate.toDateString()} | In: ${punchInDate.toLocaleTimeString()} -> Shift: ${shiftLabel} (${shiftName}) | Late:${isLate} (${lateMinutes}m) | Work:${record.totalHours}h, OT:${record.overtimeHours}h`);
   }
 
   console.log(`\n✅ Recalculated and updated ${updatedCount} records successfully.`);

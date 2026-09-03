@@ -23,7 +23,7 @@ export const SHIFT_PRESETS = [
     endHour: 15,
     endMin: 0,
     label: '07:00 AM – 03:00 PM',
-    inWindowLabel: '06:30 AM – 07:30 AM',
+    inWindowLabel: '06:00 AM – 07:30 AM',
     outWindowLabel: '03:00 PM onwards',
   },
   {
@@ -34,7 +34,7 @@ export const SHIFT_PRESETS = [
     endHour: 16,
     endMin: 30,
     label: '08:30 AM – 04:30 PM',
-    inWindowLabel: '08:00 AM – 09:00 AM',
+    inWindowLabel: '07:30 AM – 09:00 AM',
     outWindowLabel: '04:30 PM onwards',
   },
   {
@@ -45,7 +45,7 @@ export const SHIFT_PRESETS = [
     endHour: 23,
     endMin: 0,
     label: '03:00 PM – 11:00 PM',
-    inWindowLabel: '02:30 PM – 03:30 PM',
+    inWindowLabel: '02:00 PM – 03:30 PM',
     outWindowLabel: '11:00 PM onwards',
   },
   {
@@ -56,7 +56,7 @@ export const SHIFT_PRESETS = [
     endHour: 7,
     endMin: 0,
     label: '11:00 PM – 07:00 AM',
-    inWindowLabel: '10:30 PM – 11:30 PM',
+    inWindowLabel: '10:00 PM – 11:30 PM',
     outWindowLabel: '07:00 AM onwards',
   },
 ];
@@ -86,46 +86,42 @@ export const setupAlarmChannel = async () => {
   }
 };
 
-// ── Auto-Detect Shift from Current Time ──────────────────────────────────
+// ── Pure Automatic Shift Detector from Current Time ──────────────────────
 export const detectShiftFromTime = (date = new Date()) => {
   const hours = date.getHours();
   const minutes = date.getMinutes();
   const currentMinutes = hours * 60 + minutes;
 
-  // Shift 1: 05:30 AM to 07:45 AM (330 to 465 mins) -> Punch-in window 06:00 AM - 07:30 AM
-  if (currentMinutes >= 330 && currentMinutes <= 465) {
+  // Shift 1: 06:00 AM to 07:45 AM (360 to 465 mins)
+  if (currentMinutes >= 360 && currentMinutes < 465) {
     return SHIFT_PRESETS[0]; // Shift 1 (07:00 - 15:00)
   }
-  // General Shift: 07:45 AM to 11:30 AM (465 to 690 mins) -> Punch-in window 08:00 AM - 09:00 AM
-  if (currentMinutes > 465 && currentMinutes <= 690) {
+  // General Shift: 07:45 AM to 01:45 PM (465 to 825 mins)
+  if (currentMinutes >= 465 && currentMinutes < 825) {
     return SHIFT_PRESETS[1]; // General Shift (08:30 - 16:30)
   }
-  // Shift 2: 11:30 AM to 08:30 PM (690 to 1230 mins) -> Punch-in window 02:00 PM - 03:30 PM
-  if (currentMinutes > 690 && currentMinutes <= 1230) {
+  // Shift 2: 01:45 PM to 08:30 PM (825 to 1230 mins) -> 2:00 PM early arrival, 2:45 PM punch, up to 3:30 PM
+  if (currentMinutes >= 825 && currentMinutes < 1230) {
     return SHIFT_PRESETS[2]; // Shift 2 (15:00 - 23:00)
   }
-  // Shift 3: 08:30 PM to 05:30 AM -> Punch-in window 10:00 PM - 11:30 PM
+  // Shift 3: 08:30 PM to 06:00 AM (1230 to 360 mins) -> 10:00 PM early arrival, 11:00 PM start, up to 11:30 PM
   return SHIFT_PRESETS[3]; // Shift 3 (23:00 - 07:00)
 };
 
-// ── Get Current Active Shift ────────────────────────────────────────────
-export const getActiveShift = async () => {
-  try {
-    const savedId = await AsyncStorage.getItem('ems_selected_shift_id');
-    if (savedId) {
-      const shift = SHIFT_PRESETS.find(s => s.id === savedId);
-      if (shift) return shift;
-    }
-    // Auto-detect based on current time
-    return detectShiftFromTime();
-  } catch (e) {
-    return SHIFT_PRESETS[0];
+// ── Get Current Active Shift (Pure Automatic Detection) ───────────────────
+export const getActiveShift = async (date = new Date(), activeAttendance = null) => {
+  if (activeAttendance && activeAttendance.shiftStartTime) {
+    const st = activeAttendance.shiftStartTime;
+    if (st === '07:00') return SHIFT_PRESETS[0];
+    if (st === '08:30') return SHIFT_PRESETS[1];
+    if (st === '15:00') return SHIFT_PRESETS[2];
+    if (st === '23:00') return SHIFT_PRESETS[3];
   }
+  return detectShiftFromTime(date);
 };
 
-// ── Set Active Shift ────────────────────────────────────────────────────
+// ── Set Active Shift (Preserved for compatibility) ────────────────────────
 export const setActiveShift = async (shiftId) => {
-  await AsyncStorage.setItem('ems_selected_shift_id', shiftId);
   await scheduleDailyShiftAlarms();
 };
 
@@ -135,7 +131,8 @@ export const evaluateShiftWindow = (shift, isCurrentlyOnShift, now = new Date())
   const shiftStartMinutes = shift.startHour * 60 + shift.startMin;
   const shiftEndMinutes = shift.endHour * 60 + shift.endMin;
 
-  const inWindowStart = (shiftStartMinutes - 30 + 1440) % 1440;
+  // 1 hour early arrival allowed (start - 60 mins), 30 minutes window allowed after shift start
+  const inWindowStart = (shiftStartMinutes - 60 + 1440) % 1440;
   const inWindowEnd = (shiftStartMinutes + 30) % 1440;
 
   let isInMorningWindow = false;
