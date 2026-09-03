@@ -92,19 +92,19 @@ export const detectShiftFromTime = (date = new Date()) => {
   const minutes = date.getMinutes();
   const currentMinutes = hours * 60 + minutes;
 
-  // Shift 1: ~ 05:30 AM to 11:30 AM
-  if (currentMinutes >= 330 && currentMinutes < 690) {
+  // Shift 1: 05:30 AM to 07:45 AM (330 to 465 mins) -> Punch-in window 06:00 AM - 07:30 AM
+  if (currentMinutes >= 330 && currentMinutes <= 465) {
     return SHIFT_PRESETS[0]; // Shift 1 (07:00 - 15:00)
   }
-  // General Shift: ~ 11:30 AM to 01:30 PM (or if explicitly general)
-  if (currentMinutes >= 690 && currentMinutes < 810) {
+  // General Shift: 07:45 AM to 11:30 AM (465 to 690 mins) -> Punch-in window 08:00 AM - 09:00 AM
+  if (currentMinutes > 465 && currentMinutes <= 690) {
     return SHIFT_PRESETS[1]; // General Shift (08:30 - 16:30)
   }
-  // Shift 2: ~ 01:30 PM to 08:30 PM (13:30 to 20:30)
-  if (currentMinutes >= 810 && currentMinutes < 1230) {
+  // Shift 2: 11:30 AM to 08:30 PM (690 to 1230 mins) -> Punch-in window 02:00 PM - 03:30 PM
+  if (currentMinutes > 690 && currentMinutes <= 1230) {
     return SHIFT_PRESETS[2]; // Shift 2 (15:00 - 23:00)
   }
-  // Shift 3: ~ 08:30 PM to 05:30 AM (20:30 to 05:30 next day)
+  // Shift 3: 08:30 PM to 05:30 AM -> Punch-in window 10:00 PM - 11:30 PM
   return SHIFT_PRESETS[3]; // Shift 3 (23:00 - 07:00)
 };
 

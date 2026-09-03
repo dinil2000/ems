@@ -42,6 +42,25 @@ router.get('/month', async (req, res) => {
   }
 });
 
+// Get payroll history for specific employee
+router.get('/employee/:tokenNo', async (req, res) => {
+  try {
+    const tokenNo = String(req.params.tokenNo).trim();
+    const emp = await Employee.findOne({
+      $or: [{ tokenNo }, { tokenNo: { $regex: new RegExp(`^${tokenNo}$`, 'i') } }]
+    });
+    if (!emp) return res.status(404).json({ message: 'Employee not found' });
+
+    const records = await PayrollRecord.find({ employeeId: emp._id })
+      .sort({ createdAt: -1 })
+      .limit(12);
+
+    res.json(records);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Fetch or Save Employee Monthly Deductions & Shift Rates
 router.get('/deductions/:tokenNo', async (req, res) => {
   try {
@@ -146,14 +165,14 @@ router.get('/slip/:tokenNo', async (req, res) => {
       });
     }
 
-    // ── Compute actual shift days from Attendance records ──
+    // ── Compute actual shift days from Attendance records using standard billing cycle (26th prev month to 25th current month) ──
     const [reqYear, reqMonth] = yearMonth.split('-').map(Number);
-    const monthStart = new Date(reqYear, reqMonth - 1, 1);
-    const monthEnd = new Date(reqYear, reqMonth, 0, 23, 59, 59, 999);
+    const cycleStart = new Date(reqYear, reqMonth - 2, 26, 0, 0, 0);
+    const cycleEnd = new Date(reqYear, reqMonth - 1, 25, 23, 59, 59, 999);
 
     const attendanceRecords = await Attendance.find({
-      tokenNo,
-      date: { $gte: monthStart, $lte: monthEnd },
+      $or: [{ tokenNo }, { employeeId: emp._id }],
+      date: { $gte: cycleStart, $lte: cycleEnd },
       status: { $in: ['Present', 'In Progress', 'Pending Late Approval'] }
     });
 

@@ -317,9 +317,22 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             longitude: lng,
             isGeofencedAutoPunch: isInside,
             locationName: isInside ? 'Keltron Kannur Plant (Inside 300m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
+      let res = null;
+      let lastErr = null;
+      const urls = await getApiUrlList();
+      for (const url of urls) {
+        try {
+          res = await axios.post(`${url}/attendance/punch-in`, {
+            tokenNo: user.employeeToken,
+            latitude: lat,
+            longitude: lng,
+            isGeofencedAutoPunch: isInside,
+            locationName: isInside ? 'Keltron Kannur Plant (Inside 300m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
           }, { timeout: 6000 });
           if (res) break;
-        } catch (e) {}
+        } catch (e) {
+          lastErr = e.response?.data?.message || e.message;
+        }
       }
 
       if (res) {
@@ -327,7 +340,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         await syncAlarmState(true);
         await fetchStatus();
       } else {
-        Alert.alert('Error', 'Unable to connect to server.');
+        Alert.alert('Punch Failed', lastErr || 'Unable to connect to server.');
       }
     } catch (err) {
       Alert.alert('Punch Failed', err.response?.data?.message || err.message);
@@ -345,6 +358,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     try {
       const urls = await getApiUrlList();
       let res = null;
+      let lastErr = null;
       for (const url of urls) {
         try {
           res = await axios.post(`${url}/attendance/punch-out`, {
@@ -355,7 +369,9 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             locationName: isInside ? 'Keltron Kannur Plant (Inside 300m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
           }, { timeout: 6000 });
           if (res) break;
-        } catch (e) {}
+        } catch (e) {
+          lastErr = e.response?.data?.message || e.message;
+        }
       }
 
       if (res) {
@@ -363,7 +379,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         await syncAlarmState(false);
         await fetchStatus();
       } else {
-        Alert.alert('Error', 'Unable to connect to server.');
+        Alert.alert('Punch Out Failed', lastErr || 'Unable to connect to server.');
       }
     } catch (err) {
       Alert.alert('Punch Out Failed', err.response?.data?.message || err.message);

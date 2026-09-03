@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Employee = require('../models/Employee');
 const User = require('../models/User');
 
@@ -39,15 +40,19 @@ router.get('/pending', async (req, res) => {
 router.post('/approve/:id', async (req, res) => {
   try {
     const { approvedBy } = req.body;
-    const emp = await Employee.findByIdAndUpdate(
-      req.params.id,
-      {
-        status: 'Active',
-        approvedBy: approvedBy || 'Supervisor',
-        approvedAt: new Date()
-      },
-      { new: true }
-    );
+    const updateObj = {
+      status: 'Active',
+      approvedBy: approvedBy || 'Supervisor',
+      approvedAt: new Date()
+    };
+
+    let emp = null;
+    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+      emp = await Employee.findByIdAndUpdate(req.params.id, updateObj, { new: true });
+    }
+    if (!emp) {
+      emp = await Employee.findOneAndUpdate({ tokenNo: req.params.id }, updateObj, { new: true });
+    }
     if (!emp) return res.status(404).json({ message: 'Employee profile not found.' });
 
     res.json({ message: `Employee ${emp.name} (Token #${emp.tokenNo}) account approved & activated!`, employee: emp });
@@ -59,11 +64,15 @@ router.post('/approve/:id', async (req, res) => {
 // Reject / Deactivate employee account
 router.post('/reject/:id', async (req, res) => {
   try {
-    const emp = await Employee.findByIdAndUpdate(
-      req.params.id,
-      { status: 'Inactive' },
-      { new: true }
-    );
+    let emp = null;
+    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+      emp = await Employee.findByIdAndUpdate(req.params.id, { status: 'Inactive' }, { new: true });
+    }
+    if (!emp) {
+      emp = await Employee.findOneAndUpdate({ tokenNo: req.params.id }, { status: 'Inactive' }, { new: true });
+    }
+    if (!emp) return res.status(404).json({ message: 'Employee not found.' });
+
     res.json({ message: `Employee account deactivated.`, employee: emp });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -73,9 +82,12 @@ router.post('/reject/:id', async (req, res) => {
 // Get single employee by ID or Token
 router.get('/:tokenOrId', async (req, res) => {
   try {
-    const emp = await Employee.findOne({
-      $or: [{ _id: req.params.tokenOrId }, { tokenNo: req.params.tokenOrId }]
-    });
+    const isObjectId = mongoose.Types.ObjectId.isValid(req.params.tokenOrId);
+    const emp = await Employee.findOne(
+      isObjectId
+        ? { $or: [{ _id: req.params.tokenOrId }, { tokenNo: req.params.tokenOrId }] }
+        : { tokenNo: req.params.tokenOrId }
+    );
     if (!emp) return res.status(404).json({ message: 'Employee not found' });
     res.json(emp);
   } catch (error) {
@@ -113,10 +125,12 @@ router.put('/:id', async (req, res) => {
     if (unit !== undefined) updateFields.unit = unit;
     if (status !== undefined) updateFields.status = status;
 
-    // Also support lookup by tokenNo if _id doesn't match
-    let updatedEmp = await Employee.findByIdAndUpdate(req.params.id, updateFields, { new: true });
+    // Safely support lookup by _id if valid ObjectId, or fallback to tokenNo
+    let updatedEmp = null;
+    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+      updatedEmp = await Employee.findByIdAndUpdate(req.params.id, updateFields, { new: true });
+    }
     if (!updatedEmp) {
-      // Fallback: try to find by tokenNo
       updatedEmp = await Employee.findOneAndUpdate({ tokenNo: req.params.id }, updateFields, { new: true });
     }
     if (!updatedEmp) {

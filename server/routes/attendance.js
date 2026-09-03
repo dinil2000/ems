@@ -68,7 +68,13 @@ const getAssignedShiftStart = async (tokenNo, now) => {
       });
     }
 
-    const shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, startMin, 0);
+    // Shift start date: For Shift 3 (23:00) when punched in after midnight (e.g. 00:00 - 06:00), shift started yesterday
+    let shiftStartDate;
+    if (startHour === 23 && now.getHours() < 12) {
+      shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 0, 0);
+    } else {
+      shiftStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, startMin, 0);
+    }
     // 10-minute grace cutoff threshold
     const graceCutoffDate = new Date(shiftStartDate.getTime() + 10 * 60 * 1000);
 
@@ -123,14 +129,18 @@ router.post('/punch-in', async (req, res) => {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
-    // Check if there is an active punch-in without punch-out for today
-    let record = await Attendance.findOne({
+    // Check if there is an active unclosed punch-in session in progress (including across midnight)
+    let activeRecord = await Attendance.findOne({
       employeeId: employee._id,
-      date: { $gte: todayStart, $lte: todayEnd }
+      punchIn: { $exists: true, $ne: null },
+      $or: [{ punchOut: { $exists: false } }, { punchOut: null }]
     }).sort({ createdAt: -1 });
 
-    if (record && record.punchIn && !record.punchOut) {
-      return res.status(400).json({ message: 'Already punched in for today.', attendance: record });
+    if (activeRecord) {
+      return res.status(400).json({
+        message: 'Already punched in. Please punch out or cancel your active punch session before punching in again.',
+        attendance: activeRecord
+      });
     }
 
     const { shiftStartDate, graceCutoffDate, shiftLabel, shiftName } = await getAssignedShiftStart(trimmedToken, now);
@@ -273,7 +283,7 @@ router.post('/punch-out', async (req, res) => {
     };
     record.totalHours = workingHours;
     record.overtimeHours = overtimeHrs;
-    record.status = 'Present';
+    record.status = (record.isLate && !record.supervisorApproved) ? 'Pending Late Approval' : 'Present';
     await record.save();
 
     const geoNotice = isGeofencedAutoPunch ? ' (📍 Automated 300m Geofenced GPS Exit Punch)' : '';
@@ -304,6 +314,9 @@ router.post('/approve-late/:id', async (req, res) => {
     }
 
     record.supervisorApproved = true;
+    if (record.status === 'Pending Late Approval') {
+      record.status = record.punchOut ? 'Present' : 'In Progress';
+    }
     record.approvedBy = {
       tokenNo: supervisorToken || 'Supervisor',
       name: supervisorName || 'Supervisor'

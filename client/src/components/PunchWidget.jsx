@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { Clock, Play, Square, ShieldAlert, Navigation } from 'lucide-react';
+import { Clock, Play, Square, ShieldAlert, Navigation, Trash2 } from 'lucide-react';
 
 const KELTRON_KANNUR_COORDS = {
   latitude: 11.983878,
@@ -195,6 +195,39 @@ const PunchWidget = ({ onPunchUpdate }) => {
     }
   };
 
+  const handleCancelActivePunch = async () => {
+    if (!activePunch?._id) return;
+    if (!window.confirm('Are you sure you want to cancel and delete this active punch-in? This will reset your shift status to OFF SHIFT.')) {
+      return;
+    }
+    setLoading(true);
+    try {
+      await axios.delete(`${API_BASE}/attendance/${activePunch._id}`);
+      setActivePunch(null);
+      setMessage('✅ Accidental punch-in deleted successfully. Shift status reset to OFF SHIFT.');
+      await fetchAttendanceStatus();
+      if (onPunchUpdate) onPunchUpdate();
+    } catch (err) {
+      setMessage(`❌ ${err.response?.data?.message || 'Failed to cancel punch-in'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteRecord = async (id, dateStr) => {
+    if (!window.confirm(`Are you sure you want to delete the attendance punch record for ${dateStr}?`)) {
+      return;
+    }
+    try {
+      await axios.delete(`${API_BASE}/attendance/${id}`);
+      setRecentRecords(prev => prev.filter(r => r._id !== id));
+      await fetchAttendanceStatus();
+      if (onPunchUpdate) onPunchUpdate();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete record.');
+    }
+  };
+
   const isPendingApproval = empStatus === 'Pending Approval';
   const isInside300m = distanceToKeltron !== null && distanceToKeltron <= KELTRON_KANNUR_COORDS.radiusMeters;
 
@@ -343,14 +376,38 @@ const PunchWidget = ({ onPunchUpdate }) => {
             <Play size={18} /> PUNCH IN NOW
           </button>
         ) : (
-          <button
-            onClick={() => handlePunchOut()}
-            disabled={loading}
-            className="btn btn-danger"
-            style={{ flex: 1, padding: '0.75rem', fontSize: '0.95rem' }}
-          >
-            <Square size={18} /> PUNCH OUT NOW
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
+            <button
+              onClick={() => handlePunchOut()}
+              disabled={loading}
+              className="btn btn-danger"
+              style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem' }}
+            >
+              <Square size={18} /> PUNCH OUT NOW
+            </button>
+            <button
+              onClick={handleCancelActivePunch}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '0.45rem',
+                fontSize: '0.78rem',
+                backgroundColor: 'rgba(244, 63, 94, 0.15)',
+                color: '#f87171',
+                border: '1px solid #f43f5e',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                fontWeight: 600
+              }}
+              title="Delete accidental/unwanted punch"
+            >
+              <Trash2 size={13} /> 🗑️ Cancel / Delete Unwanted Punch-In
+            </button>
+          </div>
         )}
       </div>
 
@@ -367,35 +424,55 @@ const PunchWidget = ({ onPunchUpdate }) => {
         </h4>
         {recentRecords.length > 0 ? (
           <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-            {recentRecords.map(att => (
-              <div key={att._id} style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '0.35rem 0',
-                borderBottom: '1px solid #1e293b',
-                fontSize: '0.78rem'
-              }}>
-                <span style={{ color: '#cbd5e1' }}>
-                  {new Date(att.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                </span>
-                <span style={{ color: '#34d399' }}>
-                  {att.punchIn ? new Date(att.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
-                </span>
-                <span style={{ color: '#38bdf8' }}>
-                  {att.punchOut ? new Date(att.punchOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'On Shift'}
-                </span>
-                <span style={{ color: '#f8fafc', fontWeight: 600 }}>
-                  {att.totalHours || '-'}h
-                </span>
-                <span style={{ color: att.overtimeHours > 0 ? '#fbbf24' : '#64748b', fontWeight: 600 }}>
-                  OT:{att.overtimeHours || 0}h
-                </span>
-                <span className={`badge ${att.status === 'Present' ? 'badge-emerald' : 'badge-amber'}`} style={{ fontSize: '0.65rem', padding: '0.1rem 0.3rem' }}>
-                  {att.status === 'Present' ? 'P' : att.status === 'In Progress' ? 'IN' : 'L'}
-                </span>
-              </div>
-            ))}
+            {recentRecords.map(att => {
+              const dateLabel = new Date(att.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+              return (
+                <div key={att._id} style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '0.35rem 0',
+                  borderBottom: '1px solid #1e293b',
+                  fontSize: '0.78rem'
+                }}>
+                  <span style={{ color: '#cbd5e1' }}>{dateLabel}</span>
+                  <span style={{ color: '#34d399' }}>
+                    {att.punchIn ? new Date(att.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                  </span>
+                  <span style={{ color: '#38bdf8' }}>
+                    {att.punchOut ? new Date(att.punchOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'On Shift'}
+                  </span>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+                    {att.totalHours || '-'}h
+                  </span>
+                  <span style={{ color: att.overtimeHours > 0 ? '#fbbf24' : '#64748b', fontWeight: 600 }}>
+                    OT:{att.overtimeHours || 0}h
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span className={`badge ${att.status === 'Present' ? 'badge-emerald' : 'badge-amber'}`} style={{ fontSize: '0.65rem', padding: '0.1rem 0.3rem' }}>
+                      {att.status === 'Present' ? 'P' : att.status === 'In Progress' ? 'IN' : 'L'}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteRecord(att._id, dateLabel)}
+                      style={{
+                        backgroundColor: 'rgba(244, 63, 94, 0.15)',
+                        border: '1px solid #f43f5e',
+                        color: '#f87171',
+                        padding: '0.15rem 0.35rem',
+                        borderRadius: '4px',
+                        fontSize: '0.68rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                      title="Delete accidental punch"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: 0 }}>No attendance punch logs recorded yet.</p>

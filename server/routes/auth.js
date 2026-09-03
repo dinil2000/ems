@@ -222,7 +222,7 @@ router.post('/login', async (req, res) => {
     // Check if logging in as root admin with username 'admin' or 'ADMIN01'
     let user;
     if (searchKey.toLowerCase() === 'admin' || searchKey.toUpperCase() === 'ADMIN01') {
-      user = await User.findOne({ role: 'SiteAdmin' });
+      user = await User.findOne({ role: 'SiteAdmin' }).populate('employeeProfile');
     } else {
       user = await User.findOne({
         $or: [

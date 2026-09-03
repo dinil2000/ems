@@ -75,13 +75,21 @@ export default function AdminScreen({ user, onBack }) {
   const handlePromoteSupervisor = async (tokenNo) => {
     try {
       const urls = await getApiUrlList();
+      let res = null;
+      let lastErr = null;
       for (const url of urls) {
         try {
-          const res = await axios.post(`${url}/auth/create-supervisor`, { tokenNo });
-          Alert.alert('Role Promoted', res.data.message);
-          loadData();
-          break;
-        } catch (e) {}
+          res = await axios.post(`${url}/auth/create-supervisor`, { tokenNo }, { timeout: 6000 });
+          if (res) break;
+        } catch (e) {
+          lastErr = e.response?.data?.message || e.message;
+        }
+      }
+      if (res) {
+        Alert.alert('Role Promoted', res.data.message);
+        loadData();
+      } else {
+        Alert.alert('Promotion Failed', lastErr || 'Unable to connect to server.');
       }
     } catch (err) {
       Alert.alert('Promotion Failed', err.message);
@@ -100,13 +108,21 @@ export default function AdminScreen({ user, onBack }) {
           onPress: async () => {
             try {
               const urls = await getApiUrlList();
+              let res = null;
+              let lastErr = null;
               for (const url of urls) {
                 try {
-                  const res = await axios.post(`${url}/auth/demote-supervisor`, { tokenNo });
-                  Alert.alert('Role Demoted', res.data.message);
-                  loadData();
-                  break;
-                } catch (e) {}
+                  res = await axios.post(`${url}/auth/demote-supervisor`, { tokenNo }, { timeout: 6000 });
+                  if (res) break;
+                } catch (e) {
+                  lastErr = e.response?.data?.message || e.message;
+                }
+              }
+              if (res) {
+                Alert.alert('Role Demoted', res.data.message);
+                loadData();
+              } else {
+                Alert.alert('Demotion Failed', lastErr || 'Unable to connect to server.');
               }
             } catch (err) {
               Alert.alert('Demotion Failed', err.message);
@@ -120,13 +136,21 @@ export default function AdminScreen({ user, onBack }) {
   const handleApprovePending = async (empId) => {
     try {
       const urls = await getApiUrlList();
+      let res = null;
+      let lastErr = null;
       for (const url of urls) {
         try {
-          const res = await axios.post(`${url}/employees/approve/${empId}`, { approvedBy: 'SiteAdmin' });
-          Alert.alert('Account Activated', res.data.message);
-          loadData();
-          break;
-        } catch (e) {}
+          res = await axios.post(`${url}/employees/approve/${empId}`, { approvedBy: 'SiteAdmin' }, { timeout: 6000 });
+          if (res) break;
+        } catch (e) {
+          lastErr = e.response?.data?.message || e.message;
+        }
+      }
+      if (res) {
+        Alert.alert('Account Activated', res.data.message);
+        loadData();
+      } else {
+        Alert.alert('Approval Failed', lastErr || 'Unable to connect to server.');
       }
     } catch (err) {
       Alert.alert('Approval Failed', err.message);
