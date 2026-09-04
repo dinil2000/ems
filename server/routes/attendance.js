@@ -5,23 +5,23 @@ const Employee = require('../models/Employee');
 const User = require('../models/User');
 const ShiftSchedule = require('../models/ShiftSchedule');
 
+// Helper to get Date components in Indian Standard Time (Asia/Kolkata, UTC+5:30)
+const getISTDate = (date = new Date()) => {
+  const istString = date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+  return new Date(istString);
+};
+
 // ── Intelligent Multi-Shift Arrival Window & Start Time Auto-Detector ─────
-// Rules:
-// 1. Shift 1 (1st Shift: 07:00 AM – 03:00 PM): Punch-in window 06:00 AM – 07:30 AM -> Shift Start 07:00
-// 2. General Shift (08:30 AM – 04:30 PM): Punch-in window 08:00 AM – 09:00 AM -> Shift Start 08:30
-// 3. Shift 2 (2nd Shift: 03:00 PM – 11:00 PM): Punch-in window 02:00 PM – 03:30 PM -> Shift Start 15:00
-// 4. Shift 3 (Night Shift: 11:00 PM – 07:00 AM): Punch-in window 10:00 PM – 11:30 PM -> Shift Start 23:00
-// 5. Fallback: Matches to closest logical shift start time
+// Rules (Indian Standard Time):
+// 1. Shift 1 (1st Shift: 07:00 AM – 03:00 PM): Punch-in window 06:00 AM – 07:45 AM -> Shift Start 07:00
+// 2. General Shift (08:30 AM – 04:30 PM): Punch-in window 07:45 AM – 01:45 PM -> Shift Start 08:30
+// 3. Shift 2 (2nd Shift: 03:00 PM – 11:00 PM): Punch-in window 01:45 PM – 08:30 PM -> Shift Start 15:00
+// 4. Shift 3 (Night Shift: 11:00 PM – 07:00 AM): Punch-in window 08:30 PM – 06:00 AM -> Shift Start 23:00
 const detectShiftDetails = (date = new Date()) => {
-  const currentMinutes = date.getHours() * 60 + date.getMinutes();
+  const istDate = getISTDate(date);
+  const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
 
   let startHour, startMin, shiftLabel, shiftName;
-
-  // Exact shift rules with 1 hr early arrival and 30m punch window:
-  // - Shift 1: 07:00 AM – 03:00 PM (Start 07:00, 1 hr early 06:00 AM, window up to 07:30 AM / 07:45 AM)
-  // - General Shift: 08:30 AM – 04:30 PM (Start 08:30, 1 hr early 07:30 AM, window up to 09:00 AM / 01:45 PM)
-  // - Shift 2: 03:00 PM – 11:00 PM (Start 15:00, 1 hr early 02:00 PM, window up to 03:30 PM / 08:30 PM)
-  // - Shift 3: 11:00 PM – 07:00 AM (Start 23:00, 1 hr early 10:00 PM, window up to 11:30 PM / 06:00 AM)
 
   if (currentMinutes >= 360 && currentMinutes < 465) {
     // 06:00 AM to 07:45 AM -> 1st Shift (07:00 AM - 03:00 PM)
@@ -49,13 +49,18 @@ const detectShiftDetails = (date = new Date()) => {
     shiftName = 'Shift 3 (11:00 PM - 07:00 AM)';
   }
 
-  // Shift start date anchor
-  let shiftStartDate;
-  if (startHour === 23 && date.getHours() < 12) {
-    shiftStartDate = new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1, 23, 0, 0);
-  } else {
-    shiftStartDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMin, 0);
+  // Calculate shiftStartDate anchor in UTC (IST is UTC + 5:30)
+  let shiftStartYear = istDate.getFullYear();
+  let shiftStartMonth = istDate.getMonth();
+  let shiftStartDay = istDate.getDate();
+
+  if (startHour === 23 && istDate.getHours() < 12) {
+    // Shift 3 started yesterday evening at 23:00 IST
+    shiftStartDay -= 1;
   }
+
+  // Convert IST shift start components to true UTC timestamp
+  const shiftStartDate = new Date(Date.UTC(shiftStartYear, shiftStartMonth, shiftStartDay, startHour, startMin, 0) - (5 * 60 + 30) * 60 * 1000);
 
   // 10-minute grace cutoff threshold (e.g. 07:10 AM, 08:40 AM, 03:10 PM, 11:10 PM)
   const graceCutoffDate = new Date(shiftStartDate.getTime() + 10 * 60 * 1000);
@@ -209,22 +214,15 @@ router.post('/punch-out', async (req, res) => {
 
     const now = new Date();
 
-    // Find the latest active punch-in that has not been punched out yet
-    let record = await Attendance.findOne({
+    // Find the latest active punch-in that has not been punched out yet (strictly unclosed)
+    const record = await Attendance.findOne({
       employeeId: employee._id,
-      punchIn: { $exists: true },
+      punchIn: { $exists: true, $ne: null },
       $or: [{ punchOut: { $exists: false } }, { punchOut: null }]
     }).sort({ createdAt: -1 });
 
     if (!record) {
-      record = await Attendance.findOne({
-        employeeId: employee._id,
-        status: { $in: ['In Progress', 'Pending Late Approval'] }
-      }).sort({ createdAt: -1 });
-    }
-
-    if (!record) {
-      return res.status(400).json({ message: 'No active punch-in record found to punch out.' });
+      return res.status(400).json({ message: 'No active punch-in record found to punch out. You have already punched out.' });
     }
 
     const punchOutTime = punchOutTimeOverride ? new Date(punchOutTimeOverride) : now;

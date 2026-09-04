@@ -110,7 +110,8 @@ export const detectShiftFromTime = (date = new Date()) => {
 
 // ── Get Current Active Shift (Pure Automatic Detection) ───────────────────
 export const getActiveShift = async (date = new Date(), activeAttendance = null) => {
-  if (activeAttendance && activeAttendance.shiftStartTime) {
+  const isPunchedIn = Boolean(activeAttendance && activeAttendance.punchIn && !activeAttendance.punchOut);
+  if (isPunchedIn && activeAttendance.shiftStartTime) {
     const st = activeAttendance.shiftStartTime;
     if (st === '07:00') return SHIFT_PRESETS[0];
     if (st === '08:30') return SHIFT_PRESETS[1];

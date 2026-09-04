@@ -108,11 +108,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
       const punchInTime = attendance?.punchIn ? new Date(attendance.punchIn).getTime() : 0;
       const isSessionRecent = (now.getTime() - punchInTime) < 16 * 60 * 60 * 1000;
-      const isCurrentlyOnShift = isSessionRecent && (
-        attendance?.status === 'In Progress' ||
-        attendance?.status === 'Pending Late Approval' ||
-        (attendance?.punchIn && !attendance?.punchOut)
-      );
+      const isCurrentlyOnShift = Boolean(isSessionRecent && attendance?.punchIn && !attendance?.punchOut);
 
       // Auto-detect shift based on active punch or current time
       let detectedShift;
@@ -195,14 +191,10 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
             // Real-Time Automated Punch In / Out Trigger with Hysteresis & Cooldown Protection
             if (autoPunchEnabled && !isPunchingInProgressRef.current) {
-              // Check if user is currently on shift (only active if punchIn is within the last 16h)
+              // Check if user is currently on shift (only active if punchIn is within the last 16h and NOT punched out)
               const punchInTime = attendance?.punchIn ? new Date(attendance.punchIn).getTime() : 0;
               const isSessionRecent = (now - punchInTime) < 16 * 60 * 60 * 1000;
-              const isPunchedIn = isSessionRecent && (
-                attendance?.status === 'In Progress' ||
-                attendance?.status === 'Pending Late Approval' ||
-                (attendance?.punchIn && !attendance?.punchOut)
-              );
+              const isPunchedIn = Boolean(isSessionRecent && attendance?.punchIn && !attendance?.punchOut);
 
               // 1. ENTER 300m boundary -> Auto Punch In
               // Cooldown: Do NOT punch in if user just punched out < 10 mins ago (allows leaving/canteen)
@@ -258,11 +250,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             const nowTime = Date.now();
             const punchInTime = latest.punchIn ? new Date(latest.punchIn).getTime() : 0;
             const isSessionRecent = (nowTime - punchInTime) < 16 * 60 * 60 * 1000;
-            const isCurrentlyOnShift = isSessionRecent && (
-              latest.status === 'In Progress' ||
-              latest.status === 'Pending Late Approval' ||
-              (latest.punchIn && !latest.punchOut)
-            );
+            const isCurrentlyOnShift = Boolean(isSessionRecent && latest?.punchIn && !latest?.punchOut);
             await syncAlarmState(!!isCurrentlyOnShift);
           } else {
             setAttendance(null);
@@ -526,7 +514,9 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     );
   };
 
-  const isPunchedIn = attendance && (attendance.status === 'In Progress' || attendance.status === 'Pending Late Approval' || (attendance.punchIn && !attendance.punchOut));
+  const punchInTime = attendance?.punchIn ? new Date(attendance.punchIn).getTime() : 0;
+  const isSessionRecent = (Date.now() - punchInTime) < 16 * 60 * 60 * 1000;
+  const isPunchedIn = Boolean(attendance && attendance.punchIn && !attendance.punchOut && isSessionRecent);
   const isInside300m = distanceMeters !== null && distanceMeters <= KELTRON_KANNUR_GEOFENCE.radius;
 
   return (

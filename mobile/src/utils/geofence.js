@@ -161,11 +161,7 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
         const punchInTime = latest.punchIn ? new Date(latest.punchIn).getTime() : 0;
         const isSessionRecent = (now - punchInTime) < 16 * 60 * 60 * 1000; // only active if within 16h
 
-        isCurrentlyOnShift = isSessionRecent && (
-          latest.status === 'In Progress' ||
-          latest.status === 'Pending Late Approval' ||
-          (latest.punchIn && !latest.punchOut)
-        );
+        isCurrentlyOnShift = Boolean(isSessionRecent && latest.punchIn && !latest.punchOut);
       }
     } catch (e) {
       const localState = await AsyncStorage.getItem('ems_is_on_shift');

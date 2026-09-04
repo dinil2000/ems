@@ -66,7 +66,7 @@ const PunchWidget = ({ onPunchUpdate }) => {
         setRecentRecords(attRes.data.slice(0, 7));
 
         const latest = attRes.data[0];
-        if (latest.status === 'In Progress' || latest.status === 'Pending Late Approval' || (!latest.punchOut && latest.punchIn)) {
+        if (latest && latest.punchIn && !latest.punchOut) {
           setActivePunch(latest);
         } else {
           setActivePunch(null);
