@@ -49,7 +49,9 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
   const [activeShift, setActiveShiftState] = useState(SHIFT_PRESETS[0]);
   const [shiftEvaluation, setShiftEvaluation] = useState(null);
 
-  const prevInsideRef = useRef(null);
+  const isPunchingInProgressRef = useRef(false);
+  const lastPunchTypeRef = useRef(null);
+  const lastPunchTimeRef = useRef(0);
 
   const checkBgPermission = async () => {
     try {
@@ -104,7 +106,13 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
       const now = new Date();
       setClockTime(now.toLocaleTimeString());
 
-      const isCurrentlyOnShift = attendance && (attendance.status === 'In Progress' || attendance.status === 'Pending Late Approval' || (attendance.punchIn && !attendance.punchOut));
+      const punchInTime = attendance?.punchIn ? new Date(attendance.punchIn).getTime() : 0;
+      const isSessionRecent = (now.getTime() - punchInTime) < 16 * 60 * 60 * 1000;
+      const isCurrentlyOnShift = isSessionRecent && (
+        attendance?.status === 'In Progress' ||
+        attendance?.status === 'Pending Late Approval' ||
+        (attendance?.punchIn && !attendance?.punchOut)
+      );
 
       // Auto-detect shift based on active punch or current time
       let detectedShift;
@@ -155,8 +163,8 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           },
           (loc) => {
             const accuracy = loc.coords.accuracy || 100;
-            // Ignore inaccurate GPS jumps (> 75m)
-            if (accuracy > 75) return;
+            // Ignore extreme wild GPS jumps (> 200m). 200m accommodates realistic indoor factory attenuation
+            if (accuracy > 200) return;
 
             const lat = loc.coords.latitude;
             const lng = loc.coords.longitude;
@@ -177,24 +185,49 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
               setLocationStatus(`📍 Buffer Zone (${dist}m from Plant)`);
             }
 
-            // Real-Time Automated Punch In / Out Trigger with Hysteresis
-            if (autoPunchEnabled) {
-              const isPunchedIn = attendance && (attendance.status === 'In Progress' || attendance.status === 'Pending Late Approval' || (attendance.punchIn && !attendance.punchOut));
+            const now = Date.now();
+            const timeSinceLastPunch = now - lastPunchTimeRef.current;
 
-              // ENTER 300m boundary -> Auto Punch In
-              if (isInside300m && !isPunchedIn && prevInsideRef.current !== true) {
+            // When user is confirmed outside, clear any post-punch-out cooldown so entering triggers punch in
+            if (isOutside400m && lastPunchTypeRef.current === 'OUT' && timeSinceLastPunch > 60000) {
+              lastPunchTypeRef.current = null;
+            }
+
+            // Real-Time Automated Punch In / Out Trigger with Hysteresis & Cooldown Protection
+            if (autoPunchEnabled && !isPunchingInProgressRef.current) {
+              // Check if user is currently on shift (only active if punchIn is within the last 16h)
+              const punchInTime = attendance?.punchIn ? new Date(attendance.punchIn).getTime() : 0;
+              const isSessionRecent = (now - punchInTime) < 16 * 60 * 60 * 1000;
+              const isPunchedIn = isSessionRecent && (
+                attendance?.status === 'In Progress' ||
+                attendance?.status === 'Pending Late Approval' ||
+                (attendance?.punchIn && !attendance?.punchOut)
+              );
+
+              // 1. ENTER 300m boundary -> Auto Punch In
+              // Cooldown: Do NOT punch in if user just punched out < 10 mins ago (allows leaving/canteen)
+              const punchInCooldown = lastPunchTypeRef.current === 'OUT' && timeSinceLastPunch < 600000;
+              if (isInside300m && !isPunchedIn && !punchInCooldown) {
+                isPunchingInProgressRef.current = true;
                 setAutoPunchMessage(`⚡ Auto-Punched In! Entered 300m perimeter (${dist}m)`);
-                handleAutoPunchIn(lat, lng);
-                prevInsideRef.current = true;
+                handleAutoPunchIn(lat, lng).finally(() => {
+                  isPunchingInProgressRef.current = false;
+                });
               }
-              // EXIT past 400m boundary with debouncing (3 consecutive checks) -> Auto Punch Out
+              // 2. EXIT past 400m boundary with debouncing (3 consecutive checks) -> Auto Punch Out
+              // Cooldown: Do NOT punch out if user just punched in < 5 mins ago
               else if (isOutside400m && isPunchedIn) {
-                outsideCounter += 1;
-                if (outsideCounter >= 3 && prevInsideRef.current !== false) {
-                  setAutoPunchMessage(`⚡ Auto-Punched Out! Left plant perimeter (${dist}m)`);
-                  handleAutoPunchOut(lat, lng);
-                  prevInsideRef.current = false;
-                  outsideCounter = 0;
+                const punchOutCooldown = lastPunchTypeRef.current === 'IN' && timeSinceLastPunch < 300000;
+                if (!punchOutCooldown) {
+                  outsideCounter += 1;
+                  if (outsideCounter >= 3) {
+                    isPunchingInProgressRef.current = true;
+                    setAutoPunchMessage(`⚡ Auto-Punched Out! Left plant perimeter (${dist}m)`);
+                    handleAutoPunchOut(lat, lng).finally(() => {
+                      isPunchingInProgressRef.current = false;
+                      outsideCounter = 0;
+                    });
+                  }
                 }
               }
             }
@@ -222,7 +255,14 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
             setRecentRecords(res.data.slice(0, 5));
             const latest = res.data[0];
             setAttendance(latest);
-            const isCurrentlyOnShift = latest.status === 'In Progress' || latest.status === 'Pending Late Approval' || (latest.punchIn && !latest.punchOut);
+            const nowTime = Date.now();
+            const punchInTime = latest.punchIn ? new Date(latest.punchIn).getTime() : 0;
+            const isSessionRecent = (nowTime - punchInTime) < 16 * 60 * 60 * 1000;
+            const isCurrentlyOnShift = isSessionRecent && (
+              latest.status === 'In Progress' ||
+              latest.status === 'Pending Late Approval' ||
+              (latest.punchIn && !latest.punchOut)
+            );
             await syncAlarmState(!!isCurrentlyOnShift);
           } else {
             setAttendance(null);
@@ -261,12 +301,18 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           }, { timeout: 6000 });
           if (res.data) {
             const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            lastPunchTypeRef.current = 'IN';
+            lastPunchTimeRef.current = Date.now();
+            await AsyncStorage.multiSet([
+              ['ems_last_auto_action', 'IN'],
+              ['ems_last_auto_time', String(Date.now())],
+              ['ems_is_on_shift', 'true'],
+            ]);
             await sendAutoPunchNotification(
               '🟢 Auto Punched In (300m Plant Zone)',
               `Token #${user.employeeToken} automatically punched in at ${timeStr} upon entering Keltron Kannur Plant.`
             );
             await syncAlarmState(true);
-            Alert.alert('⚡ Automated Punch In', 'You entered the 300m Keltron Kannur plant perimeter!');
             await fetchStatus();
             break;
           }
@@ -289,12 +335,18 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
           }, { timeout: 6000 });
           if (res.data) {
             const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            lastPunchTypeRef.current = 'OUT';
+            lastPunchTimeRef.current = Date.now();
+            await AsyncStorage.multiSet([
+              ['ems_last_auto_action', 'OUT'],
+              ['ems_last_auto_time', String(Date.now())],
+              ['ems_is_on_shift', 'false'],
+            ]);
             await sendAutoPunchNotification(
               '🔴 Auto Punched Out (Left 300m Zone)',
               `Token #${user.employeeToken} automatically punched out at ${timeStr} upon leaving Keltron Kannur Plant.`
             );
             await syncAlarmState(false);
-            Alert.alert('⚡ Automated Punch Out', 'You left the 300m Keltron Kannur plant perimeter!');
             await fetchStatus();
             break;
           }
@@ -329,6 +381,13 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
       }
 
       if (res) {
+        lastPunchTypeRef.current = 'IN';
+        lastPunchTimeRef.current = Date.now();
+        await AsyncStorage.multiSet([
+          ['ems_last_auto_action', 'IN'],
+          ['ems_last_auto_time', String(Date.now())],
+          ['ems_is_on_shift', 'true'],
+        ]);
         Alert.alert('Punch In Success', res.data.message);
         await syncAlarmState(true);
         await fetchStatus();
@@ -368,6 +427,13 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
       }
 
       if (res) {
+        lastPunchTypeRef.current = 'OUT';
+        lastPunchTimeRef.current = Date.now();
+        await AsyncStorage.multiSet([
+          ['ems_last_auto_action', 'OUT'],
+          ['ems_last_auto_time', String(Date.now())],
+          ['ems_is_on_shift', 'false'],
+        ]);
         Alert.alert('Punch Out Success', res.data.message);
         await syncAlarmState(false);
         await fetchStatus();
@@ -402,6 +468,9 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
                 } catch (e) {}
               }
               if (deleted) {
+                lastPunchTypeRef.current = null;
+                lastPunchTimeRef.current = 0;
+                await AsyncStorage.multiRemove(['ems_last_auto_action', 'ems_last_auto_time']);
                 Alert.alert('Deleted', 'Attendance record deleted successfully.');
                 await fetchStatus();
               } else {

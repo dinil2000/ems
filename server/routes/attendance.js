@@ -120,10 +120,25 @@ router.post('/punch-in', async (req, res) => {
     }).sort({ createdAt: -1 });
 
     if (activeRecord) {
-      return res.status(400).json({
-        message: 'Already punched in. Please punch out or cancel your active punch session before punching in again.',
-        attendance: activeRecord
-      });
+      const activePunchIn = new Date(activeRecord.punchIn);
+      const hoursSincePunchIn = (now.getTime() - activePunchIn.getTime()) / (1000 * 60 * 60);
+
+      // If punchIn was within the last 16 hours, the employee is genuinely on an active shift
+      if (hoursSincePunchIn >= 0 && hoursSincePunchIn < 16) {
+        return res.status(400).json({
+          message: 'Already punched in. Please punch out or cancel your active punch session before punching in again.',
+          attendance: activeRecord
+        });
+      } else {
+        // Stale unclosed session (>16 hours old, e.g. from yesterday or previous days)
+        // Auto-close it with standard shift hours so it doesn't block today's shift!
+        activeRecord.punchOut = new Date(activePunchIn.getTime() + 8 * 60 * 60 * 1000);
+        activeRecord.totalHours = 7.5;
+        activeRecord.overtimeHours = 0;
+        activeRecord.status = (activeRecord.isLate && !activeRecord.supervisorApproved) ? 'Pending Late Approval' : 'Present';
+        await activeRecord.save();
+        console.log(`[ATTENDANCE] Auto-closed stale shift for Token #${trimmedToken} from ${activePunchIn.toISOString()}`);
+      }
     }
 
     const { shiftStartDate, graceCutoffDate, shiftLabel, shiftName } = await getAssignedShiftStart(trimmedToken, now);
@@ -216,7 +231,9 @@ router.post('/punch-out', async (req, res) => {
     const punchInTime = new Date(record.punchIn);
 
     const diffMs = Math.max(0, punchOutTime - punchInTime);
-    const totalRawHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+    const rawHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+    // Cap raw hours to maximum 16.0h to prevent accidental multi-day open sessions from generating impossible +20h/+60h overtime
+    const totalRawHrs = Math.min(rawHrs, 16.0);
 
     // ── Working Hours Calculation ──
     // Shift = 8 hrs, Lunch = 30 min deducted, Standard working = 7.5 hrs

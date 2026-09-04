@@ -17,6 +17,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiUrlList } from '../config/api';
 import {
   syncAlarmState,
   scheduleDailyShiftAlarms,
@@ -102,24 +103,32 @@ export const calculateDistanceToKeltron = (lat, lng) => {
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };
 
-// ── HTTP POST with retry ────────────────────────────────────────────────
-const postWithRetry = async (url, data, retries = 2) => {
-  for (let i = 0; i <= retries; i++) {
+// ── HTTP API Helper with Multi-URL Failover & Retry ──────────────────────
+const apiCallWithFailover = async (method, path, data = null) => {
+  const urls = await getApiUrlList();
+  let lastErr = null;
+
+  for (const baseUrl of urls) {
     try {
-      return await axios.post(url, data, { timeout: 12000 });
+      const fullUrl = `${baseUrl}${path}`;
+      if (method.toUpperCase() === 'GET') {
+        const res = await axios.get(fullUrl, { timeout: 7000 });
+        if (res.data) return res;
+      } else {
+        const res = await axios.post(fullUrl, data, { timeout: 8000 });
+        if (res.data) return res;
+      }
     } catch (err) {
-      if (i === retries) throw err;
-      await new Promise(r => setTimeout(r, 2000));
+      lastErr = err;
     }
   }
+  throw lastErr || new Error('All backend endpoints failed to respond.');
 };
 
 // ── Core Background Auto-Punch Engine with Debouncing & Cooldown ────────
 export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
   try {
     const userStr = await AsyncStorage.getItem('ems_user');
-    const apiUrl = (await AsyncStorage.getItem('ems_active_api_url')) || 'https://mppems.vercel.app/api';
-
     if (!userStr) return;
     const user = JSON.parse(userStr);
     const tokenNo = user.employeeToken;
@@ -131,22 +140,32 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
     const lastTime = lastTimeStr ? parseInt(lastTimeStr) : 0;
     const timeSinceLastAction = now - lastTime;
 
-    // Minimum cooldown between opposite actions (3 minutes) to prevent rapid bouncing
-    if (lastAction && timeSinceLastAction < 180000) {
-      console.log(`[AUTO-PUNCH] Cooldown active (${Math.round(timeSinceLastAction / 1000)}s / 180s). Skipping.`);
+    // Cooldown Rules:
+    // 1. If user just punched OUT, do NOT auto-punch IN for at least 10 mins (prevents re-punching while packing/in canteen)
+    if (isPunchIn && lastAction === 'OUT' && timeSinceLastAction < 600000) {
+      console.log(`[AUTO-PUNCH] Post-punch-out cooldown active (${Math.round(timeSinceLastAction / 1000)}s / 600s). Skipping Punch-In.`);
+      return;
+    }
+    // 2. If user just punched IN, do NOT auto-punch OUT for at least 5 mins (prevents boundary edge bouncing)
+    if (!isPunchIn && lastAction === 'IN' && timeSinceLastAction < 300000) {
+      console.log(`[AUTO-PUNCH] Post-punch-in cooldown active (${Math.round(timeSinceLastAction / 1000)}s / 300s). Skipping Punch-Out.`);
       return;
     }
 
     // Check live shift status from server
     let isCurrentlyOnShift = false;
     try {
-      const statusRes = await axios.get(`${apiUrl}/attendance/employee/${tokenNo}`, { timeout: 8000 });
+      const statusRes = await apiCallWithFailover('GET', `/attendance/employee/${tokenNo}`);
       if (statusRes.data && statusRes.data.length > 0) {
         const latest = statusRes.data[0];
-        isCurrentlyOnShift =
+        const punchInTime = latest.punchIn ? new Date(latest.punchIn).getTime() : 0;
+        const isSessionRecent = (now - punchInTime) < 16 * 60 * 60 * 1000; // only active if within 16h
+
+        isCurrentlyOnShift = isSessionRecent && (
           latest.status === 'In Progress' ||
           latest.status === 'Pending Late Approval' ||
-          (latest.punchIn && !latest.punchOut);
+          (latest.punchIn && !latest.punchOut)
+        );
       }
     } catch (e) {
       const localState = await AsyncStorage.getItem('ems_is_on_shift');
@@ -164,7 +183,7 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
       }
 
       console.log(`📍 [AUTO-PUNCH] Inside 300m zone → Punch IN for Token #${tokenNo}`);
-      const res = await postWithRetry(`${apiUrl}/attendance/punch-in`, {
+      const res = await apiCallWithFailover('POST', '/attendance/punch-in', {
         tokenNo,
         latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
         longitude: lng || KELTRON_KANNUR_GEOFENCE.longitude,
@@ -192,7 +211,7 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
       }
 
       console.log(`👋 [AUTO-PUNCH] Exited past 400m zone → Punch OUT for Token #${tokenNo}`);
-      const res = await postWithRetry(`${apiUrl}/attendance/punch-out`, {
+      const res = await apiCallWithFailover('POST', '/attendance/punch-out', {
         tokenNo,
         latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
         longitude: lng || KELTRON_KANNUR_GEOFENCE.longitude,
@@ -238,12 +257,9 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
       await performBackgroundAutoPunch(true, KELTRON_KANNUR_GEOFENCE.latitude, KELTRON_KANNUR_GEOFENCE.longitude);
     } else if (eventType === Location.GeofencingEventType.Exit) {
       const lastLoc = await Location.getLastKnownPositionAsync().catch(() => null);
-      if (lastLoc) {
-        const dist = calculateDistanceToKeltron(lastLoc.coords.latitude, lastLoc.coords.longitude);
-        if (dist >= KELTRON_KANNUR_GEOFENCE.exitRadius) {
-          await performBackgroundAutoPunch(false, lastLoc.coords.latitude, lastLoc.coords.longitude);
-        }
-      }
+      const lat = lastLoc?.coords?.latitude || KELTRON_KANNUR_GEOFENCE.latitude;
+      const lng = lastLoc?.coords?.longitude || KELTRON_KANNUR_GEOFENCE.longitude;
+      await performBackgroundAutoPunch(false, lat, lng);
     }
   } catch (e) {
     console.error('[Geofence Task] Execution error:', e.message);
@@ -265,8 +281,8 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       const loc = data.locations[data.locations.length - 1];
       const accuracy = loc.coords.accuracy || 100;
 
-      // Filter out low-accuracy GPS jumps (> 75m accuracy is unreliable indoors)
-      if (accuracy > 75) {
+      // Filter out extreme wild jumps (> 200m). 200m accommodates realistic indoor factory attenuation
+      if (accuracy > 200) {
         return;
       }
 
@@ -280,6 +296,9 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
         await performBackgroundAutoPunch(true, lat, lng);
       } else if (dist >= KELTRON_KANNUR_GEOFENCE.exitRadius) {
         // OUTSIDE 400m -> Increment debounced consecutive outside counter
+        // Reset the post-punch-out cooldown since user has physically left the perimeter
+        await AsyncStorage.removeItem('ems_last_auto_action');
+
         const countStr = (await AsyncStorage.getItem('ems_outside_consecutive_count')) || '0';
         const newCount = parseInt(countStr) + 1;
         await AsyncStorage.setItem('ems_outside_consecutive_count', String(newCount));
