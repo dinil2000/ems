@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, BackHandler, Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { checkForUpdate, downloadAndInstallUpdate, getInstalledVersion } from './src/utils/updateChecker';
+import { checkForUpdate, openUpdateDownload, getInstalledVersion } from './src/utils/updateChecker';
 
 // Ensure TaskManager background tasks are defined globally at root level
 import './src/utils/geofence';
@@ -24,8 +24,6 @@ export default function App() {
 
   // ── In-App Update State ──
   const [updateInfo, setUpdateInfo] = useState(null); // { isUpdateAvailable, latestVersion, ... }
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0); // 0-100%
   const [updateDismissed, setUpdateDismissed] = useState(false);
 
   // Initialize background geofencing & persistent location service
@@ -51,23 +49,10 @@ export default function App() {
   }, []);
 
   // ── Handle update download & install ──
-  const handleDownloadUpdate = useCallback(async () => {
-    if (isDownloading) return;
-    setIsDownloading(true);
-    setDownloadProgress(0);
-
-    const success = await downloadAndInstallUpdate((progress) => {
-      const pct = Math.round(
-        (progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100
-      );
-      setDownloadProgress(pct);
-    });
-
-    setIsDownloading(false);
-    if (success) {
-      setUpdateDismissed(true); // Hide banner after install is triggered
-    }
-  }, [isDownloading]);
+  const handleDownloadUpdate = useCallback(() => {
+    openUpdateDownload();
+    setUpdateDismissed(true);
+  }, []);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -197,26 +182,12 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
-          {/* Download Progress Bar */}
-          {isDownloading && (
-            <View style={styles.updateProgressContainer}>
-              <View style={[styles.updateProgressBar, { width: `${downloadProgress}%` }]} />
-              <Text style={styles.updateProgressText}>
-                Downloading... {downloadProgress}%
-              </Text>
-            </View>
-          )}
-
           <TouchableOpacity
-            style={[
-              styles.updateDownloadBtn,
-              isDownloading && { opacity: 0.6 },
-            ]}
+            style={styles.updateDownloadBtn}
             onPress={handleDownloadUpdate}
-            disabled={isDownloading}
           >
             <Text style={styles.updateDownloadBtnText}>
-              {isDownloading ? `⏳ Downloading... ${downloadProgress}%` : '⬇️ Download & Install Update'}
+              ⬇️ Download & Update to v{updateInfo.latestVersion}
             </Text>
           </TouchableOpacity>
         </View>
