@@ -82,11 +82,11 @@ jobs:
 
       - name: 📦 Build Signed Production Release APK
         working-directory: ./mobile/android
-        run: ./gradlew assembleRelease --no-daemon -x lint
+        run: ./gradlew assembleRelease --no-daemon --stacktrace -x lint
 
       - name: 📦 Build Signed Google Play AAB Bundle
         working-directory: ./mobile/android
-        run: ./gradlew bundleRelease --no-daemon -x lint
+        run: ./gradlew bundleRelease --no-daemon --stacktrace -x lint
 
       - name: 📋 Copy & Rename Output Files
         run: |

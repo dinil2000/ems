@@ -312,17 +312,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     try {
       const urls = await getApiUrlList();
       let res = null;
-      for (const url of urls) {
-        try {
-          res = await axios.post(`${url}/attendance/punch-in`, {
-            tokenNo: user.employeeToken,
-            latitude: lat,
-            longitude: lng,
-            isGeofencedAutoPunch: isInside,
-            locationName: isInside ? 'Keltron Kannur Plant (Inside 300m Geofence)' : `Mobile GPS (${distanceMeters || 0}m away)`
-      let res = null;
       let lastErr = null;
-      const urls = await getApiUrlList();
       for (const url of urls) {
         try {
           res = await axios.post(`${url}/attendance/punch-in`, {
