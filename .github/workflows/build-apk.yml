@@ -130,17 +130,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/heads/main')
         with:
-          tag_name: v1.0.0-latest
+          tag_name: v${{ steps.version.outputs.app_version }}
+          make_latest: true
           name: Keltron MPP EMS v${{ steps.version.outputs.app_version }} - Signed Android APK & Google Play AAB Bundle
           body: |
-            ### 📱 Keltron MPP EMS - Production Release Binaries
+            ### 📱 Keltron MPP EMS v${{ steps.version.outputs.app_version }} - Production Release Binaries
             APP_VERSION: ${{ steps.version.outputs.app_version }}
-            - **Google Play Store AAB Bundle**: `Keltron-MPP-EMS.aab` (Upload this file directly to Google Play Console).
             - **Standalone Release APK**: `Keltron-MPP-EMS.apk` (Direct device download and sideloading).
+            - **Google Play Store AAB Bundle**: `Keltron-MPP-EMS.aab` (Upload this file directly to Google Play Console).
             - **Production Certificate**: Signed with RSA 2048-bit V1/V2 production certificate (`Keltron Component Complex Ltd`).
             - **24/7 Background Geofence Attendance**: Persistent foreground service for all shifts (Shift 1, Shift 2, Shift 3, General).
             - **Shift Alarm Manager & 7.30h Working Hours**: 30-minute lunch break deduction and shift window alerts.
-            - **In-App Auto-Update**: The app now checks for new versions on launch and prompts users to download & install updates.
+            - **In-App Auto-Update**: Crash-proof direct update via Android Download Manager.
             - **Privacy Policy**: [https://mppems.vercel.app/privacy-policy](https://mppems.vercel.app/privacy-policy).
           files: |
             build_output/Keltron-MPP-EMS.apk

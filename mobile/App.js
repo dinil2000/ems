@@ -50,9 +50,9 @@ export default function App() {
 
   // ── Handle update download & install ──
   const handleDownloadUpdate = useCallback(() => {
-    openUpdateDownload();
+    openUpdateDownload(updateInfo?.downloadUrl);
     setUpdateDismissed(true);
-  }, []);
+  }, [updateInfo]);
 
   useEffect(() => {
     const checkSession = async () => {

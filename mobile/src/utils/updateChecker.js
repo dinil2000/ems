@@ -2,16 +2,16 @@
  * updateChecker.js — In-App OTA Update Checker for Sideloaded APK
  * 
  * Lightweight, 100% crash-proof version checker:
- * - Checks GitHub Releases API for the latest version tag
+ * - Checks GitHub Releases API /latest endpoint for the newest release
  * - Compares against the installed version
  * - Uses React Native Linking to trigger direct APK download via Android's Download Manager
  */
 import { Linking, Alert } from 'react-native';
 
-export const APP_VERSION = '1.0.7';
+export const APP_VERSION = '1.0.8';
 
-const GITHUB_RELEASE_URL = 'https://api.github.com/repos/dinil2000/ems/releases/tags/v1.0.0-latest';
-export const APK_DOWNLOAD_URL = 'https://github.com/dinil2000/ems/releases/download/v1.0.0-latest/Keltron-MPP-EMS.apk';
+const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/dinil2000/ems/releases/latest';
+export const DEFAULT_APK_URL = 'https://github.com/dinil2000/ems/releases/latest/download/Keltron-MPP-EMS.apk';
 
 /**
  * Get currently installed version
@@ -38,12 +38,14 @@ export function compareVersions(installed, latest) {
   return 0;
 }
 
+let cachedDownloadUrl = DEFAULT_APK_URL;
+
 /**
  * Check GitHub Releases for newer version
  */
 export async function checkForUpdate() {
   try {
-    const response = await fetch(GITHUB_RELEASE_URL, {
+    const response = await fetch(GITHUB_LATEST_RELEASE_API, {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
       },
@@ -54,19 +56,34 @@ export async function checkForUpdate() {
     const release = await response.json();
     const body = release.body || '';
 
-    // Extract APP_VERSION:x.y.z from release body
+    // Extract APP_VERSION:x.y.z from release body or release tag
+    let latestVersion = null;
     const versionMatch = body.match(/APP_VERSION[:\s]+(\d+\.\d+\.\d+)/i);
-    if (!versionMatch) return null;
+    if (versionMatch) {
+      latestVersion = versionMatch[1];
+    } else if (release.tag_name) {
+      const tagMatch = release.tag_name.match(/(\d+\.\d+\.\d+)/);
+      if (tagMatch) latestVersion = tagMatch[1];
+    }
 
-    const latestVersion = versionMatch[1];
+    if (!latestVersion) return null;
+
     const isUpdateAvailable = compareVersions(APP_VERSION, latestVersion) > 0;
+
+    // Find direct APK asset download URL if present
+    const apkAsset = release.assets?.find(a => a.name && a.name.endsWith('.apk'));
+    if (apkAsset && apkAsset.browser_download_url) {
+      cachedDownloadUrl = apkAsset.browser_download_url;
+    } else {
+      cachedDownloadUrl = DEFAULT_APK_URL;
+    }
 
     return {
       isUpdateAvailable,
       latestVersion,
       installedVersion: APP_VERSION,
-      downloadUrl: APK_DOWNLOAD_URL,
-      releaseName: release.name || 'Keltron MPP EMS Update',
+      downloadUrl: cachedDownloadUrl,
+      releaseName: release.name || `Keltron MPP EMS v${latestVersion}`,
     };
   } catch (error) {
     console.log('[UpdateChecker] Check failed silently:', error.message);
@@ -77,11 +94,12 @@ export async function checkForUpdate() {
 /**
  * Open direct APK download in device's browser / download manager
  */
-export function openUpdateDownload() {
-  Linking.openURL(APK_DOWNLOAD_URL).catch(() => {
+export function openUpdateDownload(customUrl = null) {
+  const url = customUrl || cachedDownloadUrl || DEFAULT_APK_URL;
+  Linking.openURL(url).catch(() => {
     Alert.alert(
       'Download Error',
-      `Could not open browser to download the update.\n\nPlease download directly from:\n${APK_DOWNLOAD_URL}`
+      `Could not open browser to download the update.\n\nPlease download directly from:\n${url}`
     );
   });
 }
