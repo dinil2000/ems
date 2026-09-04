@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, BackHandler, Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { checkForUpdate, downloadAndInstallUpdate, getInstalledVersion } from './src/utils/updateChecker';
 
 // Ensure TaskManager background tasks are defined globally at root level
 import './src/utils/geofence';
@@ -21,10 +22,52 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [currentScreen, setCurrentScreen] = useState('home'); // 'home', 'history', 'notice', 'payroll', 'maintenance', 'admin', 'profile'
 
+  // ── In-App Update State ──
+  const [updateInfo, setUpdateInfo] = useState(null); // { isUpdateAvailable, latestVersion, ... }
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0); // 0-100%
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+
   // Initialize background geofencing & persistent location service
   useEffect(() => {
     setupGeofenceTracking().catch(e => console.log('Geofence auto-init:', e.message));
   }, []);
+
+  // ── Check for app updates on launch ──
+  useEffect(() => {
+    const doUpdateCheck = async () => {
+      try {
+        const result = await checkForUpdate();
+        if (result && result.isUpdateAvailable) {
+          setUpdateInfo(result);
+        }
+      } catch (e) {
+        console.log('Update check failed silently:', e.message);
+      }
+    };
+    // Delay update check by 3 seconds to not block app startup
+    const timer = setTimeout(doUpdateCheck, 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ── Handle update download & install ──
+  const handleDownloadUpdate = useCallback(async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    setDownloadProgress(0);
+
+    const success = await downloadAndInstallUpdate((progress) => {
+      const pct = Math.round(
+        (progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100
+      );
+      setDownloadProgress(pct);
+    });
+
+    setIsDownloading(false);
+    if (success) {
+      setUpdateDismissed(true); // Hide banner after install is triggered
+    }
+  }, [isDownloading]);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -133,6 +176,51 @@ export default function App() {
           <Text style={styles.appBarExitText}>🚪 Exit</Text>
         </TouchableOpacity>
       </View>
+
+      {/* ── Update Available Banner ─────────────────────────── */}
+      {updateInfo && updateInfo.isUpdateAvailable && !updateDismissed && (
+        <View style={styles.updateBanner}>
+          <View style={styles.updateBannerContent}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.updateBannerTitle}>
+                🔄 Update Available — v{updateInfo.latestVersion}
+              </Text>
+              <Text style={styles.updateBannerSubtitle}>
+                Installed: v{updateInfo.installedVersion} → New: v{updateInfo.latestVersion}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.updateDismissBtn}
+              onPress={() => setUpdateDismissed(true)}
+            >
+              <Text style={{ color: '#94a3b8', fontSize: 16, fontWeight: '700' }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Download Progress Bar */}
+          {isDownloading && (
+            <View style={styles.updateProgressContainer}>
+              <View style={[styles.updateProgressBar, { width: `${downloadProgress}%` }]} />
+              <Text style={styles.updateProgressText}>
+                Downloading... {downloadProgress}%
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[
+              styles.updateDownloadBtn,
+              isDownloading && { opacity: 0.6 },
+            ]}
+            onPress={handleDownloadUpdate}
+            disabled={isDownloading}
+          >
+            <Text style={styles.updateDownloadBtnText}>
+              {isDownloading ? `⏳ Downloading... ${downloadProgress}%` : '⬇️ Download & Install Update'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Screen Views */}
       <View style={{ flex: 1 }}>
@@ -319,6 +407,71 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: '#38bdf8',
+    fontWeight: '800',
+  },
+
+  // ── Update Banner Styles ──
+  updateBanner: {
+    backgroundColor: '#0c4a6e',
+    borderBottomWidth: 1,
+    borderBottomColor: '#0284c7',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  updateBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  updateBannerTitle: {
+    color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  updateBannerSubtitle: {
+    color: '#7dd3fc',
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  updateDismissBtn: {
+    padding: 6,
+    marginLeft: 8,
+  },
+  updateProgressContainer: {
+    height: 18,
+    backgroundColor: '#1e3a5f',
+    borderRadius: 9,
+    marginTop: 8,
+    overflow: 'hidden',
+    justifyContent: 'center',
+  },
+  updateProgressBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#0284c7',
+    borderRadius: 9,
+  },
+  updateProgressText: {
+    color: '#e0f2fe',
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
+    zIndex: 1,
+  },
+  updateDownloadBtn: {
+    backgroundColor: '#0284c7',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  updateDownloadBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
     fontWeight: '800',
   },
 });
