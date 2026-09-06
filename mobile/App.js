@@ -17,6 +17,41 @@ import AdminScreen from './src/screens/AdminScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import AttendanceHistoryScreen from './src/screens/AttendanceHistoryScreen';
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('ErrorBoundary caught:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <Text style={{ fontSize: 36, marginBottom: 12 }}>⚠️</Text>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#f8fafc', marginBottom: 8, textAlign: 'center' }}>
+            Dashboard Notice
+          </Text>
+          <Text style={{ fontSize: 13, color: '#94a3b8', marginBottom: 20, textAlign: 'center' }}>
+            {this.state.error?.message || 'A temporary screen error occurred.'}
+          </Text>
+          <TouchableOpacity
+            style={{ backgroundColor: '#0284c7', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 8 }}
+            onPress={() => this.setState({ hasError: false, error: null })}
+          >
+            <Text style={{ color: '#ffffff', fontWeight: 'bold' }}>🔄 Reload Dashboard</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -195,42 +230,44 @@ export default function App() {
 
       {/* Screen Views */}
       <View style={{ flex: 1 }}>
-        {currentScreen === 'home' && (
-          <HomeScreen
-            user={user}
-            onLogout={handleLogout}
-            onNavigate={(screen) => setCurrentScreen(screen)}
-          />
-        )}
+        <ErrorBoundary>
+          {currentScreen === 'home' && (
+            <HomeScreen
+              user={user}
+              onLogout={handleLogout}
+              onNavigate={(screen) => setCurrentScreen(screen)}
+            />
+          )}
 
-        {currentScreen === 'history' && (
-          <AttendanceHistoryScreen user={user} onBack={() => setCurrentScreen('home')} />
-        )}
+          {currentScreen === 'history' && (
+            <AttendanceHistoryScreen user={user} onBack={() => setCurrentScreen('home')} />
+          )}
 
-        {currentScreen === 'notice' && (
-          <ShiftNoticeScreen user={user} onBack={() => setCurrentScreen('home')} />
-        )}
+          {currentScreen === 'notice' && (
+            <ShiftNoticeScreen user={user} onBack={() => setCurrentScreen('home')} />
+          )}
 
-        {currentScreen === 'payroll' && (
-          <PayrollScreen user={user} onBack={() => setCurrentScreen('home')} />
-        )}
+          {currentScreen === 'payroll' && (
+            <PayrollScreen user={user} onBack={() => setCurrentScreen('home')} />
+          )}
 
-        {currentScreen === 'maintenance' && (
-          <MaintenanceScreen user={user} onBack={() => setCurrentScreen('home')} />
-        )}
+          {currentScreen === 'maintenance' && (
+            <MaintenanceScreen user={user} onBack={() => setCurrentScreen('home')} />
+          )}
 
-        {currentScreen === 'admin' && (
-          <AdminScreen user={user} onBack={() => setCurrentScreen('home')} />
-        )}
+          {currentScreen === 'admin' && (
+            <AdminScreen user={user} onBack={() => setCurrentScreen('home')} />
+          )}
 
-        {currentScreen === 'profile' && (
-          <ProfileScreen
-            user={user}
-            onBack={() => setCurrentScreen('home')}
-            onNavigate={(screen) => setCurrentScreen(screen)}
-            onUserUpdate={(updatedUser) => setUser(updatedUser)}
-          />
-        )}
+          {currentScreen === 'profile' && (
+            <ProfileScreen
+              user={user}
+              onBack={() => setCurrentScreen('home')}
+              onNavigate={(screen) => setCurrentScreen(screen)}
+              onUserUpdate={(updatedUser) => setUser(updatedUser)}
+            />
+          )}
+        </ErrorBoundary>
       </View>
 
       {/* ── Beautiful Rearranged 5-Tab Bottom Navigation Bar ─────────── */}

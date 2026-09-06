@@ -13,6 +13,7 @@ import {
   Platform,
   Modal,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import * as Location from 'expo-location';
 import * as IntentLauncher from 'expo-intent-launcher';
@@ -27,6 +28,7 @@ import {
   SHIFT_PRESETS,
   getActiveShift,
   setActiveShift,
+  detectShiftFromTime,
   evaluateShiftWindow,
   syncAlarmState,
   scheduleDailyShiftAlarms,
@@ -103,27 +105,33 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
   // Clock & Automatic Shift Evaluation tick (Runs every second)
   useEffect(() => {
     const timer = setInterval(() => {
-      const now = new Date();
-      setClockTime(now.toLocaleTimeString());
+      try {
+        const now = new Date();
+        setClockTime(now.toLocaleTimeString());
 
-      const punchInTime = attendance?.punchIn ? new Date(attendance.punchIn).getTime() : 0;
-      const isSessionRecent = (now.getTime() - punchInTime) < 16 * 60 * 60 * 1000;
-      const isCurrentlyOnShift = Boolean(isSessionRecent && attendance?.punchIn && !attendance?.punchOut);
+        const punchInTime = attendance?.punchIn ? new Date(attendance.punchIn).getTime() : 0;
+        const isSessionRecent = (now.getTime() - punchInTime) < 16 * 60 * 60 * 1000;
+        const isCurrentlyOnShift = Boolean(isSessionRecent && attendance?.punchIn && !attendance?.punchOut);
 
-      // Auto-detect shift based on active punch or current time
-      let detectedShift;
-      if (isCurrentlyOnShift && attendance.shiftStartTime) {
-        if (attendance.shiftStartTime === '07:00') detectedShift = SHIFT_PRESETS[0];
-        else if (attendance.shiftStartTime === '08:30') detectedShift = SHIFT_PRESETS[1];
-        else if (attendance.shiftStartTime === '15:00') detectedShift = SHIFT_PRESETS[2];
-        else if (attendance.shiftStartTime === '23:00') detectedShift = SHIFT_PRESETS[3];
-        else detectedShift = detectShiftFromTime(now);
-      } else {
-        detectedShift = detectShiftFromTime(now);
+        // Auto-detect shift based on active punch or current time
+        let detectedShift = SHIFT_PRESETS[0];
+        if (isCurrentlyOnShift && attendance?.shiftStartTime) {
+          if (attendance.shiftStartTime === '07:00') detectedShift = SHIFT_PRESETS[0];
+          else if (attendance.shiftStartTime === '08:30') detectedShift = SHIFT_PRESETS[1];
+          else if (attendance.shiftStartTime === '15:00') detectedShift = SHIFT_PRESETS[2];
+          else if (attendance.shiftStartTime === '23:00') detectedShift = SHIFT_PRESETS[3];
+          else if (typeof detectShiftFromTime === 'function') detectedShift = detectShiftFromTime(now);
+        } else if (typeof detectShiftFromTime === 'function') {
+          detectedShift = detectShiftFromTime(now);
+        }
+
+        setActiveShiftState(detectedShift);
+        if (typeof evaluateShiftWindow === 'function') {
+          setShiftEvaluation(evaluateShiftWindow(detectedShift, !!isCurrentlyOnShift, now));
+        }
+      } catch (err) {
+        console.warn('Clock & shift evaluation tick warning:', err.message);
       }
-
-      setActiveShiftState(detectedShift);
-      setShiftEvaluation(evaluateShiftWindow(detectedShift, !!isCurrentlyOnShift, now));
     }, 1000);
     return () => clearInterval(timer);
   }, [attendance]);
