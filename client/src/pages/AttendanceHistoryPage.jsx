@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { Calendar, MapPin, Search, PieChart, Clock, Award, CheckCircle2, ChevronRight, Trash2 } from 'lucide-react';
+import { Calendar, MapPin, Search, PieChart, Clock, Award, CheckCircle2, ChevronRight, Trash2, Edit3 } from 'lucide-react';
 
 const SHIFT_CONFIG = {
   shift1: {
@@ -71,6 +71,39 @@ const AttendanceHistoryPage = () => {
       setRecords(prev => prev.filter(r => r._id !== id));
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to delete attendance record.');
+    }
+  };
+
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [editOtHours, setEditOtHours] = useState('0');
+  const [savingOt, setSavingOt] = useState(false);
+
+  const handleOpenEditOt = (record) => {
+    setEditingRecord(record);
+    setEditOtHours(String(record.overtimeHours || 0));
+  };
+
+  const handleSaveOt = async () => {
+    if (!editingRecord) return;
+    const parsedOt = parseFloat(editOtHours);
+    if (isNaN(parsedOt) || parsedOt < 0) {
+      alert('Please enter a valid positive number for Overtime hours.');
+      return;
+    }
+
+    setSavingOt(true);
+    try {
+      await axios.put(`${API_BASE}/attendance/${editingRecord._id}/overtime`, {
+        overtimeHours: parsedOt
+      });
+
+      setRecords(prev => prev.map(r => r._id === editingRecord._id ? { ...r, overtimeHours: parsedOt } : r));
+      setEditingRecord(null);
+    } catch (err) {
+      console.error('Error saving OT:', err);
+      alert(err.response?.data?.message || 'Failed to update Overtime hours.');
+    } finally {
+      setSavingOt(false);
     }
   };
 
@@ -566,27 +599,50 @@ const AttendanceHistoryPage = () => {
                         </div>
                       </td>
                       <td>
-                        <button
-                          onClick={() => handleDeleteRecord(att._id, dateStr)}
-                          style={{
-                            backgroundColor: 'rgba(244, 63, 94, 0.12)',
-                            border: '1px solid #f43f5e',
-                            color: '#f87171',
-                            padding: '0.25rem 0.55rem',
-                            borderRadius: '6px',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            transition: 'all 0.2s'
-                          }}
-                          title="Delete accidental/unwanted punch"
-                        >
-                          <Trash2 size={13} />
-                          <span>Delete</span>
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <button
+                            onClick={() => handleOpenEditOt(att)}
+                            style={{
+                              backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                              border: '1px solid #38bdf8',
+                              color: '#38bdf8',
+                              padding: '0.25rem 0.55rem',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              transition: 'all 0.2s'
+                            }}
+                            title="Edit Overtime (OT) hours"
+                          >
+                            <Edit3 size={13} />
+                            <span>Edit OT</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRecord(att._id, dateStr)}
+                            style={{
+                              backgroundColor: 'rgba(244, 63, 94, 0.12)',
+                              border: '1px solid #f43f5e',
+                              color: '#f87171',
+                              padding: '0.25rem 0.55rem',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              transition: 'all 0.2s'
+                            }}
+                            title="Delete accidental/unwanted punch"
+                          >
+                            <Trash2 size={13} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -598,6 +654,191 @@ const AttendanceHistoryPage = () => {
           <p style={{ color: '#94a3b8', padding: '2rem', textAlign: 'center' }}>
             No attendance records found for Token #{searchToken || user?.employeeToken} in {activeCycle.label}.
           </p>
+        )}
+
+        {/* ── Edit Overtime (OT) Modal ── */}
+        {editingRecord && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '1rem'
+          }}>
+            <div style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '12px',
+              padding: '1.5rem',
+              maxWidth: '420px',
+              width: '100%',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#f8fafc', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span>⏱️</span> Edit Shift Overtime (OT)
+                </h3>
+                <button
+                  onClick={() => setEditingRecord(null)}
+                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ backgroundColor: '#0f172a', borderRadius: '8px', padding: '0.85rem', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <span style={{ color: '#94a3b8' }}>Date:</span>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+                    {new Date(editingRecord.date).toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <span style={{ color: '#94a3b8' }}>Shift:</span>
+                  <span style={{ color: '#38bdf8', fontWeight: 600 }}>
+                    {editingRecord.shiftStartTime === '07:00' ? 'Shift 1 (07:00 - 15:00)' :
+                     editingRecord.shiftStartTime === '15:00' ? 'Shift 2 (15:00 - 23:00)' :
+                     editingRecord.shiftStartTime === '23:00' ? 'Shift 3 (23:00 - 07:00)' : 'General (08:30 - 16:30)'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Punch In / Out:</span>
+                  <span style={{ color: '#34d399', fontWeight: 600 }}>
+                    {editingRecord.punchIn ? new Date(editingRecord.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                    {' → '}
+                    {editingRecord.punchOut ? new Date(editingRecord.punchOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: '#cbd5e1', fontWeight: 600, marginBottom: '0.5rem' }}>
+                  Overtime Hours (OT)
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    max="16"
+                    value={editOtHours}
+                    onChange={(e) => setEditOtHours(e.target.value)}
+                    style={{
+                      flex: 1,
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #38bdf8',
+                      borderRadius: '8px',
+                      color: '#f8fafc',
+                      padding: '0.65rem 0.85rem',
+                      fontSize: '1.1rem',
+                      fontWeight: 700,
+                      outline: 'none'
+                    }}
+                  />
+                  <span style={{ color: '#94a3b8', fontWeight: 600 }}>hrs</span>
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditOtHours('0')}
+                  style={{ backgroundColor: '#334155', border: 'none', color: '#f8fafc', padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  0 hrs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditOtHours('1.0')}
+                  style={{ backgroundColor: '#334155', border: 'none', color: '#f8fafc', padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  1 hr
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditOtHours('2.0')}
+                  style={{ backgroundColor: '#334155', border: 'none', color: '#f8fafc', padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  2 hrs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditOtHours('4.0')}
+                  style={{ backgroundColor: '#334155', border: 'none', color: '#f8fafc', padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  4 hrs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditOtHours('7.5')}
+                  style={{ backgroundColor: '#334155', border: 'none', color: '#f8fafc', padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  7.5 hrs (Double Shift)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditOtHours(prev => String(Math.max(0, parseFloat((parseFloat(prev || 0) + 0.5).toFixed(2)))))}
+                  style={{ backgroundColor: '#0284c7', border: 'none', color: '#ffffff', padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  +0.5h
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditOtHours(prev => String(Math.max(0, parseFloat((parseFloat(prev || 0) - 0.5).toFixed(2)))))}
+                  style={{ backgroundColor: '#475569', border: 'none', color: '#ffffff', padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  -0.5h
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingRecord(null)}
+                  style={{
+                    backgroundColor: 'transparent',
+                    border: '1px solid #475569',
+                    color: '#94a3b8',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveOt}
+                  disabled={savingOt}
+                  style={{
+                    backgroundColor: '#0284c7',
+                    border: 'none',
+                    color: '#ffffff',
+                    padding: '0.5rem 1.25rem',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  {savingOt ? 'Saving...' : '💾 Save OT Hours'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

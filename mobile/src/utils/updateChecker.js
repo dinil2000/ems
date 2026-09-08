@@ -8,7 +8,7 @@
  */
 import { Linking, Alert } from 'react-native';
 
-export const APP_VERSION = '1.0.9';
+export const APP_VERSION = '1.0.10';
 
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/dinil2000/ems/releases/latest';
 export const DEFAULT_APK_URL = 'https://github.com/dinil2000/ems/releases/latest/download/Keltron-MPP-EMS.apk';

@@ -9,6 +9,7 @@ import {
   RefreshControl,
   TextInput,
   Alert,
+  Modal,
 } from 'react-native';
 import Svg, { Circle, G, Text as SvgText } from 'react-native-svg';
 import axios from 'axios';
@@ -104,7 +105,7 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              const urls = await getApiUrlList();
+               const urls = await getApiUrlList();
               let deleted = false;
               for (const url of urls) {
                 try {
@@ -126,6 +127,51 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
         }
       ]
     );
+  };
+
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [editOtHours, setEditOtHours] = useState('0');
+  const [savingOt, setSavingOt] = useState(false);
+
+  const handleOpenEditOt = (record) => {
+    setEditingRecord(record);
+    setEditOtHours(String(record.overtimeHours || 0));
+  };
+
+  const handleSaveOt = async () => {
+    if (!editingRecord) return;
+    const parsedOt = parseFloat(editOtHours);
+    if (isNaN(parsedOt) || parsedOt < 0) {
+      Alert.alert('Invalid Hours', 'Please enter a valid positive number for Overtime hours.');
+      return;
+    }
+
+    setSavingOt(true);
+    try {
+      const urls = await getApiUrlList();
+      let updated = false;
+      for (const url of urls) {
+        try {
+          await axios.put(`${url}/attendance/${editingRecord._id}/overtime`, {
+            overtimeHours: parsedOt
+          }, { timeout: 6000 });
+          updated = true;
+          break;
+        } catch (e) {}
+      }
+
+      if (updated) {
+        setRecords(prev => prev.map(r => r._id === editingRecord._id ? { ...r, overtimeHours: parsedOt } : r));
+        setEditingRecord(null);
+        Alert.alert('Success', `Overtime updated to ${parsedOt} hrs.`);
+      } else {
+        Alert.alert('Error', 'Unable to update Overtime hours.');
+      }
+    } catch (err) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSavingOt(false);
+    }
   };
 
   // ── Compute Standard Monthly Billing Cycles (26th to 25th) ───────────────
@@ -528,13 +574,22 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
                   <Text style={styles.locationText}>📍 Keltron Kannur Plant (300m Geofence Verified)</Text>
                 </View>
 
-                {/* Delete / Remove Accidental Punch Record */}
-                <TouchableOpacity
-                  style={styles.deleteRecordBtn}
-                  onPress={() => handleDeleteRecord(att._id, dateStr)}
-                >
-                  <Text style={styles.deleteRecordBtnText}>🗑️ Delete Accidental Punch Record</Text>
-                </TouchableOpacity>
+                {/* Action Buttons: Edit OT & Delete */}
+                <View style={styles.cardActionRow}>
+                  <TouchableOpacity
+                    style={styles.editOtCardBtn}
+                    onPress={() => handleOpenEditOt(att)}
+                  >
+                    <Text style={styles.editOtCardBtnText}>✏️ Edit OT</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.deleteCardBtn}
+                    onPress={() => handleDeleteRecord(att._id, dateStr)}
+                  >
+                    <Text style={styles.deleteCardBtnText}>🗑️ Delete</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             );
           })
@@ -542,6 +597,117 @@ export default function AttendanceHistoryScreen({ user, onBack }) {
           <Text style={styles.emptyText}>No attendance records found for Token #{searchToken || user?.employeeToken} in {activeCycle.label}.</Text>
         )}
       </ScrollView>
+
+      {/* ── Edit Overtime (OT) Modal ── */}
+      <Modal
+        visible={!!editingRecord}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setEditingRecord(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>⏱️ Edit Shift Overtime (OT)</Text>
+              <TouchableOpacity onPress={() => setEditingRecord(null)}>
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {editingRecord && (
+              <View style={styles.modalInfoBox}>
+                <View style={styles.modalInfoRow}>
+                  <Text style={styles.modalInfoLabel}>Date:</Text>
+                  <Text style={styles.modalInfoVal}>
+                    {new Date(editingRecord.date).toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                  </Text>
+                </View>
+                <View style={styles.modalInfoRow}>
+                  <Text style={styles.modalInfoLabel}>Shift:</Text>
+                  <Text style={[styles.modalInfoVal, { color: '#38bdf8' }]}>
+                    {editingRecord.shiftStartTime === '07:00' ? 'Shift 1 (07:00 - 15:00)' :
+                     editingRecord.shiftStartTime === '15:00' ? 'Shift 2 (15:00 - 23:00)' :
+                     editingRecord.shiftStartTime === '23:00' ? 'Shift 3 (23:00 - 07:00)' : 'General (08:30 - 16:30)'}
+                  </Text>
+                </View>
+                <View style={styles.modalInfoRow}>
+                  <Text style={styles.modalInfoLabel}>Punch In / Out:</Text>
+                  <Text style={[styles.modalInfoVal, { color: '#34d399' }]}>
+                    {editingRecord.punchIn ? new Date(editingRecord.punchIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                    {' → '}
+                    {editingRecord.punchOut ? new Date(editingRecord.punchOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <Text style={styles.inputLabel}>Overtime Hours (OT):</Text>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={styles.numericInput}
+                keyboardType="numeric"
+                value={editOtHours}
+                onChangeText={setEditOtHours}
+                placeholder="0"
+                placeholderTextColor="#64748b"
+              />
+              <Text style={styles.unitText}>hrs</Text>
+            </View>
+
+            {/* Quick preset buttons */}
+            <View style={styles.presetRow}>
+              <TouchableOpacity style={styles.presetBtn} onPress={() => setEditOtHours('0')}>
+                <Text style={styles.presetBtnText}>0h</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.presetBtn} onPress={() => setEditOtHours('1.0')}>
+                <Text style={styles.presetBtnText}>1h</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.presetBtn} onPress={() => setEditOtHours('2.0')}>
+                <Text style={styles.presetBtnText}>2h</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.presetBtn} onPress={() => setEditOtHours('4.0')}>
+                <Text style={styles.presetBtnText}>4h</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.presetBtn} onPress={() => setEditOtHours('7.5')}>
+                <Text style={styles.presetBtnText}>7.5h (2nd Shift)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.presetBtn, { backgroundColor: '#0284c7' }]}
+                onPress={() => setEditOtHours(prev => String(Math.max(0, parseFloat((parseFloat(prev || 0) + 0.5).toFixed(2)))))}
+              >
+                <Text style={[styles.presetBtnText, { color: '#ffffff' }]}>+0.5h</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.presetBtn, { backgroundColor: '#475569' }]}
+                onPress={() => setEditOtHours(prev => String(Math.max(0, parseFloat((parseFloat(prev || 0) - 0.5).toFixed(2)))))}
+              >
+                <Text style={[styles.presetBtnText, { color: '#ffffff' }]}>-0.5h</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setEditingRecord(null)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={handleSaveOt}
+                disabled={savingOt}
+              >
+                {savingOt ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.saveBtnText}>💾 Save OT Hours</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -846,6 +1012,43 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 30,
   },
+  cardActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  editOtCardBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editOtCardBtnText: {
+    color: '#38bdf8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  deleteCardBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(244, 63, 94, 0.12)',
+    borderWidth: 1,
+    borderColor: '#f43f5e',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteCardBtnText: {
+    color: '#f87171',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   deleteRecordBtn: {
     backgroundColor: 'rgba(244, 63, 94, 0.12)',
     borderWidth: 1,
@@ -860,6 +1063,135 @@ const styles = StyleSheet.create({
   deleteRecordBtnText: {
     color: '#f87171',
     fontSize: 11,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  modalCloseText: {
+    fontSize: 20,
+    color: '#94a3b8',
+    fontWeight: '700',
+    padding: 4,
+  },
+  modalInfoBox: {
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 14,
+    gap: 4,
+  },
+  modalInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalInfoLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  modalInfoVal: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#f8fafc',
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#cbd5e1',
+    marginBottom: 6,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  numericInput: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+    borderRadius: 8,
+    color: '#f8fafc',
+    fontSize: 18,
+    fontWeight: '700',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  unitText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  presetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 18,
+  },
+  presetBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  presetBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  cancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#475569',
+  },
+  cancelBtnText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  saveBtn: {
+    backgroundColor: '#0284c7',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
     fontWeight: '700',
   },
 });

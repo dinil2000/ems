@@ -136,13 +136,20 @@ router.post('/punch-in', async (req, res) => {
         });
       } else {
         // Stale unclosed session (>16 hours old, e.g. from yesterday or previous days)
-        // Auto-close it with standard shift hours so it doesn't block today's shift!
-        activeRecord.punchOut = new Date(activePunchIn.getTime() + 8 * 60 * 60 * 1000);
+        // Auto-close it at the official shift end time (e.g. 11:00 PM for Shift 2, 3:00 PM for Shift 1)
+        let staleShiftEnd;
+        try {
+          const staleShiftInfo = await getAssignedShiftStart(trimmedToken, activePunchIn);
+          staleShiftEnd = new Date(staleShiftInfo.shiftStartDate.getTime() + 8 * 60 * 60 * 1000);
+        } catch (e) {
+          staleShiftEnd = new Date(activePunchIn.getTime() + 8 * 60 * 60 * 1000);
+        }
+        activeRecord.punchOut = staleShiftEnd;
         activeRecord.totalHours = 7.5;
         activeRecord.overtimeHours = 0;
         activeRecord.status = (activeRecord.isLate && !activeRecord.supervisorApproved) ? 'Pending Late Approval' : 'Present';
         await activeRecord.save();
-        console.log(`[ATTENDANCE] Auto-closed stale shift for Token #${trimmedToken} from ${activePunchIn.toISOString()}`);
+        console.log(`[ATTENDANCE] Auto-closed stale shift for Token #${trimmedToken} at official shift end: ${staleShiftEnd.toISOString()}`);
       }
     }
 
@@ -228,40 +235,58 @@ router.post('/punch-out', async (req, res) => {
     const punchOutTime = punchOutTimeOverride ? new Date(punchOutTimeOverride) : now;
     const punchInTime = new Date(record.punchIn);
 
-    const diffMs = Math.max(0, punchOutTime - punchInTime);
-    const rawHrs = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
-    // Cap raw hours to maximum 16.0h to prevent accidental multi-day open sessions from generating impossible +20h/+60h overtime
-    const totalRawHrs = Math.min(rawHrs, 16.0);
+    // ── Shift-Anchored Working Hours & Overtime Calculation ──
+    // 1. Determine the assigned shift start & end anchor for this punch session
+    let shiftStartAnchor;
+    try {
+      const shiftInfo = await getAssignedShiftStart(employee.tokenNo, punchInTime);
+      shiftStartAnchor = shiftInfo.shiftStartDate;
+    } catch (e) {
+      shiftStartAnchor = punchInTime;
+    }
+    const shiftEndAnchor = new Date(shiftStartAnchor.getTime() + 8 * 60 * 60 * 1000);
 
-    // ── Working Hours Calculation ──
-    // Shift = 8 hrs, Lunch = 30 min deducted, Standard working = 7.5 hrs
-    const LUNCH_DEDUCTION = 0.5;        // 30 minutes lunch break
-    const STANDARD_WORKING = 7.5;       // 7 hrs 30 min
-    const SHIFT_DURATION = 8.0;         // 8 hrs total shift (including lunch)
-    const POST_SHIFT_GRACE = 0.5;       // 30 min grace after shift ends
-    const OT_THRESHOLD = SHIFT_DURATION + POST_SHIFT_GRACE; // 8.5 hrs
+    // 2. Official work starts at shiftStartAnchor (early arrival is not credited toward work duration or OT)
+    const effectiveStart = punchInTime < shiftStartAnchor ? shiftStartAnchor : punchInTime;
 
+    // 3. Normal working hours (capped at standard 7.5 hrs after 30-min lunch deduction)
+    const LUNCH_DEDUCTION = 0.5;    // 30 minutes lunch break
+    const STANDARD_WORKING = 7.5;   // 7.5 hrs
     let workingHours;
-    let overtimeHrs;
 
-    if (totalRawHrs >= SHIFT_DURATION) {
-      // Full shift completed → working = 7.5 hrs (always)
+    if (punchOutTime >= shiftEndAnchor) {
+      // Completed standard shift (or stayed for OT) → exactly 7.5 hrs normal working
       workingHours = STANDARD_WORKING;
-    } else if (totalRawHrs > LUNCH_DEDUCTION) {
-      // Partial day → deduct lunch from raw hours
-      workingHours = parseFloat((totalRawHrs - LUNCH_DEDUCTION).toFixed(2));
     } else {
-      // Very short presence (< 30 min)
-      workingHours = parseFloat(totalRawHrs.toFixed(2));
+      // Left early before shift end
+      const earlyDurationMs = Math.max(0, punchOutTime - effectiveStart);
+      const earlyRawHrs = earlyDurationMs / (1000 * 60 * 60);
+      if (earlyRawHrs > LUNCH_DEDUCTION) {
+        workingHours = parseFloat((earlyRawHrs - LUNCH_DEDUCTION).toFixed(2));
+      } else {
+        workingHours = parseFloat(earlyRawHrs.toFixed(2));
+      }
+      workingHours = Math.min(workingHours, STANDARD_WORKING);
     }
 
-    if (totalRawHrs > OT_THRESHOLD) {
-      // OT = (raw - lunch) - working = raw - 8.0
-      // The 30 min grace (3:00 - 3:30 for 1st shift) is NOT counted as OT
-      overtimeHrs = parseFloat((totalRawHrs - SHIFT_DURATION).toFixed(2));
-    } else {
-      // Within shift + 30 min grace → no overtime
-      overtimeHrs = 0;
+    // 4. Overtime (OT) Calculation
+    // Post-shift 30 min grace (e.g. 3:00 PM to 3:30 PM for 1st shift) is normal departure grace → 0 OT
+    // If staying > 30 mins past shift end, ALL time worked beyond shift end is Overtime!
+    let overtimeHrs = 0;
+    if (punchOutTime > shiftEndAnchor) {
+      const extraMs = punchOutTime - shiftEndAnchor;
+      const extraMinutes = extraMs / (1000 * 60);
+
+      if (extraMinutes > 30) {
+        const rawOtHours = extraMs / (1000 * 60 * 60);
+        // If OT is a full second shift (>= 8.0 hrs, e.g. continuous double shift 7 AM to 11 PM),
+        // deduct 30 min for the second shift meal/lunch break: 16h gross - 1h break = 15h (7.5h work + 7.5h OT)
+        if (rawOtHours >= 8.0) {
+          overtimeHrs = parseFloat((rawOtHours - 0.5).toFixed(2));
+        } else {
+          overtimeHrs = parseFloat(rawOtHours.toFixed(2));
+        }
+      }
     }
 
     // Display formatting
@@ -444,6 +469,75 @@ router.post('/recalculate-shifts', async (req, res) => {
       success: true,
       message: `Successfully recalculated ${updatedCount} attendance records with true shift start times, working hours, and cleared false late penalties!`,
       updatedCount,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ── Edit / Update Overtime and Working Hours for an Attendance Record ──
+router.put('/:id/overtime', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { overtimeHours, totalHours, punchIn, punchOut } = req.body;
+
+    const record = await Attendance.findById(id);
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Attendance record not found.' });
+    }
+
+    if (overtimeHours !== undefined && overtimeHours !== null) {
+      record.overtimeHours = Math.max(0, parseFloat(Number(overtimeHours).toFixed(2)));
+    }
+    if (totalHours !== undefined && totalHours !== null) {
+      record.totalHours = Math.max(0, parseFloat(Number(totalHours).toFixed(2)));
+    }
+    if (punchIn) {
+      record.punchIn = new Date(punchIn);
+    }
+    if (punchOut) {
+      record.punchOut = new Date(punchOut);
+    }
+
+    await record.save();
+    res.json({
+      success: true,
+      message: `Overtime updated successfully: ${record.overtimeHours} hrs (Working: ${record.totalHours} hrs)`,
+      attendance: record
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { overtimeHours, totalHours, punchIn, punchOut } = req.body;
+
+    const record = await Attendance.findById(id);
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Attendance record not found.' });
+    }
+
+    if (overtimeHours !== undefined && overtimeHours !== null) {
+      record.overtimeHours = Math.max(0, parseFloat(Number(overtimeHours).toFixed(2)));
+    }
+    if (totalHours !== undefined && totalHours !== null) {
+      record.totalHours = Math.max(0, parseFloat(Number(totalHours).toFixed(2)));
+    }
+    if (punchIn) {
+      record.punchIn = new Date(punchIn);
+    }
+    if (punchOut) {
+      record.punchOut = new Date(punchOut);
+    }
+
+    await record.save();
+    res.json({
+      success: true,
+      message: 'Attendance record updated successfully.',
+      attendance: record
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
