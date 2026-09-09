@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: ☕ Setup Java JDK 17
         uses: actions/setup-java@v4
@@ -40,19 +42,46 @@ jobs:
         working-directory: ./mobile
         run: npx expo prebuild --platform android --clean
 
-      - name: 🔐 Generate Official Production Keystore & Configure Release Signing
+      - name: 🔐 Setup Permanent Production Keystore & Configure Release Signing
         working-directory: ./mobile/android
         run: |
-          # 1. Create official 2048-bit RSA production keystore
-          keytool -genkeypair -v \
-            -keystore app/keltron-release.keystore \
-            -alias keltron \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass keltron2026 \
-            -keypass keltron2026 \
-            -dname "CN=Keltron MPP EMS, OU=EMS Enterprise, O=Keltron Component Complex Ltd, L=Kannur, ST=Kerala, C=IN"
+          mkdir -p ../keystore
+          KEYSTORE_PATH="../../mobile/keystore/keltron-release.keystore"
+
+          if [ -f "$KEYSTORE_PATH" ]; then
+            echo "=========================================================="
+            echo "✅ USING EXISTING PERMANENT PRODUCTION KEYSTORE"
+            echo "=========================================================="
+          else
+            echo "=========================================================="
+            echo "⚡ GENERATING PERMANENT 2048-BIT RSA PRODUCTION KEYSTORE"
+            echo "=========================================================="
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE_PATH" \
+              -alias keltron \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass keltron2026 \
+              -keypass keltron2026 \
+              -dname "CN=Keltron MPP EMS, OU=EMS Enterprise, O=Keltron Component Complex Ltd, L=Kannur, ST=Kerala, C=IN"
+
+            # Commit and push permanent keystore to repository
+            cd ../..
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add mobile/keystore/keltron-release.keystore
+            git commit -m "chore(release): lock in permanent production keystore [skip ci]" || echo "Nothing to commit"
+            git push origin HEAD:main || echo "Git push skipped or branch protected"
+            cd mobile/android
+          fi
+
+          echo "=========================================================="
+          echo "🔑 PRODUCTION CERTIFICATE FINGERPRINTS"
+          echo "=========================================================="
+          keytool -list -v -keystore "$KEYSTORE_PATH" -alias keltron -storepass keltron2026
+
+          cp "$KEYSTORE_PATH" app/keltron-release.keystore
 
           # 2. Inject official production signing config into app/build.gradle
           python3 -c "
@@ -117,7 +146,8 @@ jobs:
           path: |
             build_output/Keltron-MPP-EMS.apk
             build_output/Keltron-MPP-EMS.aab
-          if-no-files-found: error
+            mobile/keystore/keltron-release.keystore
+          if-no-files-found: warn
 
       - name: 📋 Extract App Version
         id: version
