@@ -144,39 +144,39 @@ router.get('/slip/:tokenNo', async (req, res) => {
     const now = new Date();
     const yearMonth = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const emp = await Employee.findOne({ tokenNo });
-    if (!emp) {
-      return res.status(404).json({ message: `Employee Token #${tokenNo} not found.` });
-    }
-
-    let deduction = await PayrollDeduction.findOne({ tokenNo, yearMonth });
-    if (!deduction) {
-      deduction = await PayrollDeduction.create({
-        tokenNo,
-        yearMonth,
-        canteenDeduction: 0,
-        festivalAdvance: 0,
-        providentFund: 0,
-        professionalTax: 0,
-        medicalInsurance: 0,
-        shift1Rate: 30.00,
-        shift2Rate: 50.00,
-        shift3Rate: 78.00,
-      });
-    }
-
-    // ── Compute actual shift days from Attendance records using standard billing cycle (26th prev month to 25th current month) ──
     const [reqYear, reqMonth] = yearMonth.split('-').map(Number);
     // Cycle Start: 26th of previous month at 00:00:00 IST (UTC: 18:30 of 25th)
     const cycleStart = new Date(Date.UTC(reqYear, reqMonth - 2, 25, 18, 30, 0, 0));
     // Cycle End: 25th of current month at 23:59:59 IST (UTC: 18:29:59 of 25th)
     const cycleEnd = new Date(Date.UTC(reqYear, reqMonth - 1, 25, 18, 29, 59, 999));
 
-    const attendanceRecords = await Attendance.find({
-      $or: [{ tokenNo }, { employeeId: emp._id }],
-      date: { $gte: cycleStart, $lte: cycleEnd },
-      status: { $in: ['Present', 'In Progress', 'Pending Late Approval'] }
-    }).sort({ punchIn: 1 }).lean();
+    // ── Execute all DB queries concurrently in parallel ──
+    const [emp, existingDeduction, attendanceRecords] = await Promise.all([
+      Employee.findOne({ tokenNo }).lean(),
+      PayrollDeduction.findOne({ tokenNo, yearMonth }).lean(),
+      Attendance.find({
+        tokenNo,
+        date: { $gte: cycleStart, $lte: cycleEnd },
+        status: { $in: ['Present', 'In Progress', 'Pending Late Approval'] }
+      }).sort({ punchIn: 1 }).lean()
+    ]);
+
+    if (!emp) {
+      return res.status(404).json({ message: `Employee Token #${tokenNo} not found.` });
+    }
+
+    const deduction = existingDeduction || {
+      tokenNo,
+      yearMonth,
+      canteenDeduction: 0,
+      festivalAdvance: 0,
+      providentFund: 0,
+      professionalTax: 0,
+      medicalInsurance: 0,
+      shift1Rate: 30.00,
+      shift2Rate: 50.00,
+      shift3Rate: 78.00,
+    };
 
     // ── Group by IST calendar date to ensure 1 calendar day cannot count multiple times ──
     const dayRecordsMap = new Map();
