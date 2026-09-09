@@ -1,20 +1,35 @@
 const mongoose = require('mongoose');
 
 let isInMemoryFallback = false;
+let cachedPromise = null;
 
 const connectDB = async () => {
+  // If already connected, return immediately in 0ms!
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
+  }
+
+  // If connection is already in progress, reuse the pending promise
+  if (cachedPromise) {
+    return cachedPromise;
+  }
+
   const mongoURI = process.env.MONGODB_URI;
 
   // 1. Try configured MongoDB Atlas Cluster URI
   if (mongoURI) {
     try {
       console.log('Connecting to MongoDB Atlas Cloud Cluster...');
-      const conn = await mongoose.connect(mongoURI, {
-        serverSelectionTimeoutMS: 15000, // 15s timeout for cloud SSL handshake
+      cachedPromise = mongoose.connect(mongoURI, {
+        serverSelectionTimeoutMS: 8000,
+        maxPoolSize: 10,
+        minPoolSize: 2,
       });
+      const conn = await cachedPromise;
       console.log(`🎉 MongoDB Atlas Cloud Connected: ${conn.connection.host}`);
       return conn;
     } catch (err) {
+      cachedPromise = null;
       console.warn(`⚠️ Atlas Cloud MongoDB connection failed: ${err.message}. Trying local MongoDB fallback...`);
     }
   }

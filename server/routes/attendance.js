@@ -369,18 +369,25 @@ router.get('/pending-late', async (req, res) => {
   }
 });
 
-// Get attendance for specific employee (sorted by latest createdAt & date)
+// Get attendance for specific employee (sorted by latest date & createdAt)
 router.get('/employee/:tokenNo', async (req, res) => {
   try {
     const tokenNo = String(req.params.tokenNo).trim();
-    const records = await Attendance.find({
-      $or: [
-        { tokenNo: tokenNo },
-        { tokenNo: { $regex: new RegExp(`^${tokenNo}$`, 'i') } }
-      ]
-    })
-      .sort({ createdAt: -1, date: -1 })
-      .limit(60);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 60));
+
+    // Fast indexed token lookup with .lean() for zero Document overhead
+    let records = await Attendance.find({ tokenNo })
+      .sort({ date: -1, createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    if (!records.length) {
+      records = await Attendance.find({ tokenNo: { $regex: new RegExp(`^${tokenNo}$`, 'i') } })
+        .sort({ date: -1, createdAt: -1 })
+        .limit(limit)
+        .lean();
+    }
+
     res.json(records);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -396,7 +403,10 @@ router.get('/today', async (req, res) => {
 
     const list = await Attendance.find({
       date: { $gte: todayStart, $lte: todayEnd }
-    }).sort({ createdAt: -1 }).populate('employeeId');
+    })
+      .sort({ createdAt: -1 })
+      .populate('employeeId')
+      .lean();
 
     res.json(list);
   } catch (error) {

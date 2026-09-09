@@ -176,7 +176,7 @@ router.get('/slip/:tokenNo', async (req, res) => {
       $or: [{ tokenNo }, { employeeId: emp._id }],
       date: { $gte: cycleStart, $lte: cycleEnd },
       status: { $in: ['Present', 'In Progress', 'Pending Late Approval'] }
-    }).sort({ punchIn: 1 });
+    }).sort({ punchIn: 1 }).lean();
 
     // ── Group by IST calendar date to ensure 1 calendar day cannot count multiple times ──
     const dayRecordsMap = new Map();

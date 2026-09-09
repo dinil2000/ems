@@ -250,7 +250,7 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
       const urls = await getApiUrlList();
       for (const url of urls) {
         try {
-          const res = await axios.get(`${url}/attendance/employee/${user.employeeToken}`, { timeout: 6000 });
+          const res = await axios.get(`${url}/attendance/employee/${user.employeeToken}?limit=5`, { timeout: 5000 });
           if (res.data && res.data.length > 0) {
             setRecentRecords(res.data.slice(0, 5));
             const latest = res.data[0];

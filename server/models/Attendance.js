@@ -70,4 +70,11 @@ const attendanceSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
+// High-performance database query indexes
+attendanceSchema.index({ tokenNo: 1, date: -1 });
+attendanceSchema.index({ employeeId: 1, date: -1 });
+attendanceSchema.index({ date: -1 });
+attendanceSchema.index({ status: 1 });
+attendanceSchema.index({ tokenNo: 1, status: 1 });
+
 module.exports = mongoose.model('Attendance', attendanceSchema);
