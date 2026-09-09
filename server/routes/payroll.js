@@ -167,14 +167,32 @@ router.get('/slip/:tokenNo', async (req, res) => {
 
     // ── Compute actual shift days from Attendance records using standard billing cycle (26th prev month to 25th current month) ──
     const [reqYear, reqMonth] = yearMonth.split('-').map(Number);
-    const cycleStart = new Date(reqYear, reqMonth - 2, 26, 0, 0, 0);
-    const cycleEnd = new Date(reqYear, reqMonth - 1, 25, 23, 59, 59, 999);
+    // Cycle Start: 26th of previous month at 00:00:00 IST (UTC: 18:30 of 25th)
+    const cycleStart = new Date(Date.UTC(reqYear, reqMonth - 2, 25, 18, 30, 0, 0));
+    // Cycle End: 25th of current month at 23:59:59 IST (UTC: 18:29:59 of 25th)
+    const cycleEnd = new Date(Date.UTC(reqYear, reqMonth - 1, 25, 18, 29, 59, 999));
 
     const attendanceRecords = await Attendance.find({
       $or: [{ tokenNo }, { employeeId: emp._id }],
       date: { $gte: cycleStart, $lte: cycleEnd },
       status: { $in: ['Present', 'In Progress', 'Pending Late Approval'] }
-    });
+    }).sort({ punchIn: 1 });
+
+    // ── Group by IST calendar date to ensure 1 calendar day cannot count multiple times ──
+    const dayRecordsMap = new Map();
+
+    for (const rec of attendanceRecords) {
+      const recordDate = rec.punchIn || rec.date;
+      if (!recordDate) continue;
+      // Convert to IST date YYYY-MM-DD
+      const istTime = new Date(new Date(recordDate).getTime() + (5.5 * 60 * 60 * 1000));
+      const dateKey = istTime.toISOString().split('T')[0];
+
+      if (!dayRecordsMap.has(dateKey)) {
+        dayRecordsMap.set(dateKey, []);
+      }
+      dayRecordsMap.get(dateKey).push(rec);
+    }
 
     let shift1Days = 0;
     let shift2Days = 0;
@@ -182,10 +200,25 @@ router.get('/slip/:tokenNo', async (req, res) => {
     let generalDays = 0;
     let totalOTHours = 0;
 
-    for (const rec of attendanceRecords) {
-      const st = rec.shiftStartTime || '';
-      totalOTHours += rec.overtimeHours || 0;
+    for (const [dateKey, dayRecs] of dayRecordsMap.entries()) {
+      // Filter out negligible test punches (< 15 mins) if valid punches exist on the same day
+      const validRecs = dayRecs.filter(r => (r.totalHours || 0) >= 0.25 || (r.overtimeHours || 0) > 0);
+      const activeRecs = validRecs.length > 0 ? validRecs : dayRecs;
 
+      // Pick the primary shift worked on this date (the one with the most total hours)
+      activeRecs.sort((a, b) => ((b.totalHours || 0) + (b.overtimeHours || 0)) - ((a.totalHours || 0) + (a.overtimeHours || 0)));
+      const primaryRec = activeRecs[0];
+
+      // Sum overtime for this date (cap daily overtime at 8.0 hours max to prevent runaway stale loops)
+      let dayOT = 0;
+      for (const r of activeRecs) {
+        dayOT += (r.overtimeHours || 0);
+      }
+      dayOT = Math.min(8.0, Math.round(dayOT * 100) / 100);
+      totalOTHours += dayOT;
+
+      // Credit 1 day for the primary shift worked
+      const st = primaryRec.shiftStartTime || '';
       if (st === '07:00') {
         shift1Days += 1;
       } else if (st === '15:00') {
@@ -224,15 +257,19 @@ router.get('/slip/:tokenNo', async (req, res) => {
 
     const netPay = Math.round((grossPay - totalDeductions) * 100) / 100;
 
-    // ── Format month label ──
+    // ── Format month label & billing cycle ──
     const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const monthLabel = `Payment for the Month ${monthNames[reqMonth - 1]} ${reqYear}`;
+    const prevMonthIdx = (reqMonth - 2 + 12) % 12;
+    const prevYear = reqMonth === 1 ? reqYear - 1 : reqYear;
+    const billingCycleLabel = `26 ${monthNames[prevMonthIdx].substring(0, 3)} ${prevYear} – 25 ${monthNames[reqMonth - 1].substring(0, 3)} ${reqYear}`;
 
     res.json({
       companyName: 'KELTRON COMPONENT COMPLEX LTD.',
       location: 'Keltron Nagar, Kalliassery, Kannur',
       section: 'PRODUCTION CENTRE - I',
       month: monthLabel,
+      billingCycle: billingCycleLabel,
       tokenNo: emp.tokenNo,
       employeeName: emp.name,
       dailyRate: dailyRate.toFixed(2),

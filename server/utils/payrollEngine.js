@@ -11,8 +11,9 @@ const calculatePayrollForEmployee = async (employeeId, year, month) => {
   const currentYear = parseInt(year);
   const currentMonth = parseInt(month); // e.g., 8
 
-  const billingStart = new Date(currentYear, currentMonth - 2, 26, 0, 0, 0); // 26th of prev month
-  const billingEnd = new Date(currentYear, currentMonth - 1, 25, 23, 59, 59); // 25th of current month
+  // Standard billing cycle: 26th of prev month to 25th of current month (in IST UTC+5:30)
+  const billingStart = new Date(Date.UTC(currentYear, currentMonth - 2, 25, 18, 30, 0, 0)); // 26th 00:00 IST
+  const billingEnd = new Date(Date.UTC(currentYear, currentMonth - 1, 25, 18, 29, 59, 999)); // 25th 23:59 IST
   
   // Last day of current month for payout
   const payoutDate = new Date(currentYear, currentMonth, 0);
@@ -20,34 +21,57 @@ const calculatePayrollForEmployee = async (employeeId, year, month) => {
   // Fetch attendance records within billing cycle
   const attendances = await Attendance.find({
     employeeId: employee._id,
-    date: { $gte: billingStart, $lte: billingEnd }
-  });
+    date: { $gte: billingStart, $lte: billingEnd },
+    status: { $in: ['Present', 'In Progress', 'Pending Late Approval'] }
+  }).sort({ punchIn: 1 });
 
   const basicMonthlySalary = employee.basicSalary;
   const standardWorkDays = 26;
   const standardHoursPerDay = 7.5;
 
-  const dailyRate = basicMonthlySalary / standardWorkDays;
+  const dailyRate = employee.dailyRate || (basicMonthlySalary / standardWorkDays);
   const hourlyRate = dailyRate / standardHoursPerDay;
+
+  // ── Group by IST calendar date to ensure 1 calendar day cannot count multiple times ──
+  const dayRecordsMap = new Map();
+
+  for (const rec of attendances) {
+    const recordDate = rec.punchIn || rec.date;
+    if (!recordDate) continue;
+    const istTime = new Date(new Date(recordDate).getTime() + (5.5 * 60 * 60 * 1000));
+    const dateKey = istTime.toISOString().split('T')[0];
+
+    if (!dayRecordsMap.has(dateKey)) {
+      dayRecordsMap.set(dateKey, []);
+    }
+    dayRecordsMap.get(dateKey).push(rec);
+  }
 
   let totalDaysPresent = 0;
   let totalOvertimeHours = 0;
   let sundayDaysWorked = 0;
 
-  attendances.forEach(record => {
-    if (record.status === 'Present') {
-      totalDaysPresent += 1;
+  for (const [dateKey, dayRecs] of dayRecordsMap.entries()) {
+    // Filter out negligible test punches (< 15 mins) if valid punches exist on same day
+    const validRecs = dayRecs.filter(r => (r.totalHours || 0) >= 0.25 || (r.overtimeHours || 0) > 0);
+    const activeRecs = validRecs.length > 0 ? validRecs : dayRecs;
 
-      // Use the overtimeHours field directly (already calculated correctly at punch-out)
-      // totalHours = working hours (capped at 7.5), overtimeHours = extra beyond shift+grace
-      totalOvertimeHours += (record.overtimeHours || 0);
+    totalDaysPresent += 1;
 
-      // Sunday Check
-      if (record.isSunday || new Date(record.date).getDay() === 0) {
-        sundayDaysWorked += 1;
-      }
+    let dayOT = 0;
+    for (const r of activeRecs) {
+      dayOT += (r.overtimeHours || 0);
     }
-  });
+    dayOT = Math.min(8.0, Math.round(dayOT * 100) / 100);
+    totalOvertimeHours += dayOT;
+
+    // Sunday Check based on calendar date in IST
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const dayOfWeek = new Date(y, m - 1, d).getDay();
+    if (dayOfWeek === 0) {
+      sundayDaysWorked += 1;
+    }
+  }
 
   // Calculate Pay Components
   const regularHoursPay = totalDaysPresent * dailyRate;

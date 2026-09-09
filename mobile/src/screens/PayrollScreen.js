@@ -181,6 +181,11 @@ export default function PayrollScreen({ user, onBack }) {
               <Text style={styles.tLocation}>{slip.location}</Text>
               <Text style={styles.tSection}>{slip.section}</Text>
               <Text style={styles.tMonth}>{slip.month}</Text>
+              {slip.billingCycle ? (
+                <Text style={{ textAlign: 'center', fontSize: 11, color: '#475569', fontWeight: 'bold', marginTop: 2 }}>
+                  [ Cycle: {slip.billingCycle} (26th to 25th) ]
+                </Text>
+              ) : null}
 
               <View style={styles.dashedLine} />
 

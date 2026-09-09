@@ -8,14 +8,25 @@ const OfficialKeltronPayslip = ({ tokenNoInput, onManageDeductions }) => {
   const [slip, setSlip] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
+
+  const monthOptions = [];
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const label = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+    monthOptions.push({ value: val, label });
+  }
+
   const targetToken = tokenNoInput || user?.employeeToken || '8356';
 
   const fetchSlip = async () => {
     setLoading(true);
     try {
-      const now = new Date();
-      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const res = await axios.get(`${API_BASE}/payroll/slip/${targetToken}?month=${currentMonth}`);
+      const res = await axios.get(`${API_BASE}/payroll/slip/${targetToken}?month=${selectedMonth}`);
       setSlip(res.data);
     } catch (err) {
       console.error('Payslip fetch error:', err);
@@ -26,7 +37,7 @@ const OfficialKeltronPayslip = ({ tokenNoInput, onManageDeductions }) => {
 
   useEffect(() => {
     fetchSlip();
-  }, [targetToken]);
+  }, [targetToken, selectedMonth]);
 
   const handlePrint = () => {
     window.print();
@@ -37,7 +48,7 @@ const OfficialKeltronPayslip = ({ tokenNoInput, onManageDeductions }) => {
       {/* Action Header */}
       <div style={{
         display: 'flex',
-        justify: 'space-between',
+        justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: '1rem',
         backgroundColor: '#1e293b',
@@ -54,7 +65,27 @@ const OfficialKeltronPayslip = ({ tokenNoInput, onManageDeductions }) => {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.6rem' }}>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            style={{
+              backgroundColor: '#0f172a',
+              color: '#f8fafc',
+              border: '1px solid #475569',
+              borderRadius: '8px',
+              padding: '0.45rem 0.75rem',
+              fontSize: '0.85rem',
+              fontWeight: '600'
+            }}
+          >
+            {monthOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
           {onManageDeductions && (
             <button className="btn btn-secondary" onClick={onManageDeductions}>
               <Edit3 size={15} /> ✏️ Edit My Deductions
@@ -90,6 +121,11 @@ const OfficialKeltronPayslip = ({ tokenNoInput, onManageDeductions }) => {
             <p style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}>{slip.location}</p>
             <p style={{ margin: '0.2rem 0', fontWeight: 'bold' }}>{slip.section}</p>
             <p style={{ margin: '0.3rem 0', fontWeight: 'bold', fontSize: '0.92rem' }}>{slip.month}</p>
+            {slip.billingCycle && (
+              <p style={{ margin: '0.2rem 0', fontSize: '0.78rem', color: '#475569', fontWeight: 'bold', letterSpacing: '0.2px' }}>
+                [ Cycle: {slip.billingCycle} (26th to 25th) ]
+              </p>
+            )}
           </div>
 
           <div style={{ borderBottom: '1px dashed #000', margin: '0.8rem 0' }} />
