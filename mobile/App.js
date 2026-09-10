@@ -16,6 +16,7 @@ import MaintenanceScreen from './src/screens/MaintenanceScreen';
 import AdminScreen from './src/screens/AdminScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import AttendanceHistoryScreen from './src/screens/AttendanceHistoryScreen';
+import MachineLogScreen from './src/screens/MachineLogScreen';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -167,6 +168,7 @@ export default function App() {
       case 'notice': return '📅 Weekly Shift Notice';
       case 'payroll': return '💰 Monthly Payslip & OT';
       case 'maintenance': return '🔧 Machine Cleaning Alerts';
+      case 'machinelogs': return '📖 Machine Log Book';
       case 'admin': return '🛡️ Master Admin Console';
       case 'profile': return '👤 Employee Profile';
       default: return 'Keltron MPP EMS';
@@ -253,6 +255,10 @@ export default function App() {
 
           {currentScreen === 'maintenance' && (
             <MaintenanceScreen user={user} onBack={() => setCurrentScreen('home')} />
+          )}
+
+          {currentScreen === 'machinelogs' && (
+            <MachineLogScreen user={user} onBack={() => setCurrentScreen('home')} />
           )}
 
           {currentScreen === 'admin' && (

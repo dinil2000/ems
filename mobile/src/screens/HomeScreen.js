@@ -669,6 +669,46 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
         </View>
       </View>
 
+      {/* Machine Log Book Feature Banner Tile */}
+      <View style={{ marginHorizontal: 16, marginBottom: 12 }}>
+        <TouchableOpacity
+          style={{
+            backgroundColor: '#1e293b',
+            borderRadius: 12,
+            borderWidth: 1.5,
+            borderColor: '#0284c7',
+            padding: 14,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.25,
+            shadowRadius: 3.84,
+            elevation: 4,
+          }}
+          onPress={() => onNavigate('machinelogs')}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+            <View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: 'rgba(2, 132, 199, 0.2)', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 22 }}>📖</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ color: '#f8fafc', fontSize: 14, fontWeight: '800' }}>Machine Log Book</Text>
+                <View style={{ backgroundColor: '#0284c7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                  <Text style={{ color: '#ffffff', fontSize: 9, fontWeight: '800' }}>DAILY PRODUCTION</Text>
+                </View>
+              </View>
+              <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
+                Record batch quantities, Form 1620135 & supervisor notes
+              </Text>
+            </View>
+          </View>
+          <Text style={{ color: '#38bdf8', fontSize: 18, fontWeight: '800', marginLeft: 8 }}>→</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Navigation Options Grid */}
       <View style={styles.navGrid}>
         <TouchableOpacity style={styles.navCard} onPress={() => onNavigate('history')}>

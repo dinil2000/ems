@@ -4,13 +4,14 @@ import axios from 'axios';
 import PunchWidget from '../components/PunchWidget';
 import RegisterEmployeeModal from '../components/RegisterEmployeeModal';
 import EmployeeProfileModal from '../components/EmployeeProfileModal';
-import { Users, Cpu, Shield, UserPlus, Sparkles, AlertTriangle, UserCheck, CheckCircle, RefreshCw, Clock, Eye } from 'lucide-react';
+import { Users, Cpu, Shield, UserPlus, Sparkles, AlertTriangle, UserCheck, CheckCircle, RefreshCw, Clock, Eye, BookOpen } from 'lucide-react';
 
 const SupervisorDashboard = ({ setActiveTab }) => {
   const { user, API_BASE } = useContext(AuthContext);
   const [employees, setEmployees] = useState([]);
   const [pendingEmps, setPendingEmps] = useState([]);
   const [pendingLatePunches, setPendingLatePunches] = useState([]);
+  const [pendingLogs, setPendingLogs] = useState([]);
   const [machines, setMachines] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,18 +22,20 @@ const SupervisorDashboard = ({ setActiveTab }) => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [empRes, pendingRes, lateRes, machRes, alertRes] = await Promise.all([
+      const [empRes, pendingRes, lateRes, machRes, alertRes, logsRes] = await Promise.all([
         axios.get(`${API_BASE}/employees?status=Active`),
         axios.get(`${API_BASE}/employees/pending`),
         axios.get(`${API_BASE}/attendance/pending-late`),
         axios.get(`${API_BASE}/machines`),
-        axios.get(`${API_BASE}/maintenance`)
+        axios.get(`${API_BASE}/maintenance`),
+        axios.get(`${API_BASE}/machine-logs/pending`).catch(() => ({ data: { count: 0, logs: [] } }))
       ]);
       setEmployees(empRes.data);
       setPendingEmps(pendingRes.data);
       setPendingLatePunches(lateRes.data);
       setMachines(machRes.data);
       setAlerts(alertRes.data);
+      setPendingLogs(logsRes.data?.logs || []);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     } finally {
@@ -173,6 +176,30 @@ const SupervisorDashboard = ({ setActiveTab }) => {
           </div>
         </div>
 
+        <div 
+          className="card" 
+          style={{ 
+            borderLeft: pendingLogs.length > 0 ? '4px solid #38bdf8' : '1px solid #334155',
+            cursor: 'pointer' 
+          }}
+          onClick={() => setActiveTab && setActiveTab('machinelogs')}
+          title="Click to open Machine Log Book"
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>MACHINE LOG ENTRIES</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: pendingLogs.length > 0 ? '#38bdf8' : '#34d399', marginTop: '0.2rem' }}>
+                {pendingLogs.length}
+              </div>
+            </div>
+            <BookOpen style={{ color: pendingLogs.length > 0 ? '#38bdf8' : '#10b981' }} size={32} />
+          </div>
+          <div style={{ fontSize: '0.75rem', color: pendingLogs.length > 0 ? '#38bdf8' : '#94a3b8', marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>{pendingLogs.length > 0 ? '⚠️ Awaiting Supervisor Verification' : 'All Verified & Up to Date'}</span>
+            <span style={{ fontSize: '0.7rem', textDecoration: 'underline' }}>View Log Book →</span>
+          </div>
+        </div>
+
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -188,6 +215,85 @@ const SupervisorDashboard = ({ setActiveTab }) => {
           </div>
         </div>
       </div>
+
+      {/* Pending Machine Log Approvals Section */}
+      {pendingLogs.length > 0 && (
+        <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid #38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.03)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <BookOpen style={{ color: '#38bdf8' }} size={22} />
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#f8fafc' }}>
+                Pending Machine Production Log Verifications ({pendingLogs.length})
+              </h3>
+            </div>
+            <button 
+              onClick={() => setActiveTab && setActiveTab('machinelogs')}
+              className="btn btn-primary"
+              style={{ padding: '0.35rem 0.8rem', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <Eye size={15} /> Open Machine Log Book ({pendingLogs.length} to Verify)
+            </button>
+          </div>
+
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date / Shift</th>
+                  <th>Machine</th>
+                  <th>Operator</th>
+                  <th>Part No. / Rating</th>
+                  <th>W.O. / R.C. No.</th>
+                  <th>Quantity</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingLogs.slice(0, 5).map(log => (
+                  <tr key={log._id}>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{log.date}</div>
+                      <span className="badge badge-indigo" style={{ fontSize: '0.7rem' }}>Shift {log.shift}</span>
+                    </td>
+                    <td>
+                      <span className="badge badge-cyan" style={{ fontWeight: 700 }}>#{log.machineId}</span>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{log.operatorName}</div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Token #{log.operatorToken}</div>
+                    </td>
+                    <td>
+                      <div>{log.partNo || '-'}</div>
+                      <div style={{ fontSize: '0.72rem', color: '#38bdf8' }}>{log.rating || ''}</div>
+                    </td>
+                    <td>
+                      <div>WO: {log.workOrderNo || '-'}</div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>RC: {log.routeCardNo || '-'}</div>
+                    </td>
+                    <td>
+                      <strong style={{ fontSize: '1.05rem', color: '#34d399' }}>{log.quantity}</strong>
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => setActiveTab && setActiveTab('machinelogs')}
+                        className="btn btn-secondary"
+                        style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}
+                      >
+                        Verify in Book →
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {pendingLogs.length > 5 && (
+              <div style={{ textAlign: 'center', padding: '0.6rem', fontSize: '0.8rem', color: '#94a3b8' }}>
+                + {pendingLogs.length - 5} more pending entries in the Machine Log Book
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Pending Late Punch Approvals Section (> 10 Mins Delay) */}
       {pendingLatePunches.length > 0 && (

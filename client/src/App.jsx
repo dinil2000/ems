@@ -8,6 +8,7 @@ import ShiftRosterNotice from './components/ShiftRosterNotice';
 import PayrollTable from './components/PayrollTable';
 import MaintenanceAlerts from './components/MaintenanceAlerts';
 import AttendanceHistoryPage from './pages/AttendanceHistoryPage';
+import MachineLogBookPage from './pages/MachineLogBookPage';
 import LoginPage from './pages/LoginPage';
 
 const MainApp = () => {
@@ -39,6 +40,7 @@ const MainApp = () => {
         {activeTab === 'history' && <AttendanceHistoryPage />}
         {activeTab === 'shifts' && <ShiftRosterNotice />}
         {activeTab === 'payroll' && <PayrollTable />}
+        {activeTab === 'machinelogs' && <MachineLogBookPage />}
         {activeTab === 'maintenance' && <MaintenanceAlerts />}
       </main>
     </div>

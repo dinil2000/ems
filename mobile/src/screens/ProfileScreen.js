@@ -177,6 +177,14 @@ export default function ProfileScreen({ user, onBack, onNavigate, onUserUpdate }
               <Text style={styles.shortcutBtnText}>Machine Cleaning</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={[styles.shortcutBtn, { borderColor: '#38bdf8' }]}
+              onPress={() => onNavigate && onNavigate('machinelogs')}
+            >
+              <Text style={{ fontSize: 16 }}>📖</Text>
+              <Text style={[styles.shortcutBtnText, { color: '#38bdf8' }]}>Log Book</Text>
+            </TouchableOpacity>
+
             {isSiteAdmin && (
               <TouchableOpacity
                 style={[styles.shortcutBtn, { borderColor: '#818cf8' }]}

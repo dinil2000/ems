@@ -1,7 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import ProfileModal from './ProfileModal';
-import { ShieldAlert, LogOut, User, Calendar, History } from 'lucide-react';
+import { ShieldAlert, LogOut, User, Calendar, History, BookOpen } from 'lucide-react';
 
 const Navbar = ({ activeTab, setActiveTab }) => {
   const { user, logout } = useContext(AuthContext);
@@ -90,6 +90,13 @@ const Navbar = ({ activeTab, setActiveTab }) => {
                 Payroll (26th-25th)
               </button>
               <button
+                className={`btn ${activeTab === 'machinelogs' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setActiveTab('machinelogs')}
+                style={{ border: '1px solid #0284c7' }}
+              >
+                <BookOpen size={15} /> Machine Log Book
+              </button>
+              <button
                 className={`btn ${activeTab === 'maintenance' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setActiveTab('maintenance')}
               >
@@ -105,6 +112,13 @@ const Navbar = ({ activeTab, setActiveTab }) => {
                 onClick={() => setActiveTab('employee')}
               >
                 My Punch & Portal
+              </button>
+              <button
+                className={`btn ${activeTab === 'machinelogs' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setActiveTab('machinelogs')}
+                style={{ border: '1px solid #0284c7' }}
+              >
+                <BookOpen size={15} /> Machine Log Book
               </button>
               <button
                 className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}

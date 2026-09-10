@@ -90,6 +90,7 @@ app.use('/api/shifts', require('./routes/shifts'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/maintenance', require('./routes/maintenance'));
+app.use('/api/machine-logs', require('./routes/machineLogs'));
 
 // System Health & Info Endpoint
 app.get('/api/health', (req, res) => {
