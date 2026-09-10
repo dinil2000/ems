@@ -7,8 +7,9 @@
  * - Uses React Native Linking to trigger direct APK download via Android's Download Manager
  */
 import { Linking, Alert } from 'react-native';
+import appConfig from '../../app.json';
 
-export const APP_VERSION = '1.0.10';
+export const APP_VERSION = appConfig?.expo?.version || '1.0.13';
 
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/dinil2000/ems/releases/latest';
 export const DEFAULT_APK_URL = 'https://github.com/dinil2000/ems/releases/latest/download/Keltron-MPP-EMS.apk';
