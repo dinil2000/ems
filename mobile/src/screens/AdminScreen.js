@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import { getApiUrlList } from '../config/api';
+import EmployeeDetailModal from '../components/EmployeeDetailModal';
 
 const MPP_MACHINES = [
   { id: '700,705', name: 'Winding 700/705', unit: 'Unit 2' },
@@ -33,6 +34,7 @@ export default function AdminScreen({ user, onBack }) {
   const [pendingEmps, setPendingEmps] = useState([]);
   const [supTokenNo, setSupTokenNo] = useState('');
   const [loading, setLoading] = useState(true);
+  const [inspectorUser, setInspectorUser] = useState(null);
 
   // Edit Employee Details Modal State
   const [editingEmp, setEditingEmp] = useState(null);
@@ -285,7 +287,11 @@ export default function AdminScreen({ user, onBack }) {
                   </Text>
                 </View>
 
-                <View style={{ flexDirection: 'row', gap: 6 }}>
+                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <TouchableOpacity style={styles.inspectBtn} onPress={() => setInspectorUser(usr)}>
+                    <Text style={styles.inspectBtnText}>👁️ Slip</Text>
+                  </TouchableOpacity>
+
                   {usr.employeeProfile && (
                     <TouchableOpacity style={styles.editBtn} onPress={() => openEditModal(usr.employeeProfile)}>
                       <Text style={styles.editBtnText}>✏️ Edit</Text>
@@ -425,6 +431,15 @@ export default function AdminScreen({ user, onBack }) {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* 👁️ Comprehensive Employee Profile & Payroll Dossier Modal */}
+      <EmployeeDetailModal
+        visible={!!inspectorUser}
+        onClose={() => setInspectorUser(null)}
+        employee={inspectorUser}
+        currentUser={user}
+        onUpdated={loadData}
+      />
     </View>
   );
 }
@@ -559,6 +574,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94a3b8',
     marginTop: 2,
+  },
+  inspectBtn: {
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  inspectBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   editBtn: {
     backgroundColor: '#334155',

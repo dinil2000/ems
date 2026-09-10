@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
-import { ShieldAlert, UserCheck, UserPlus, Key, CheckCircle, XCircle, UserMinus, Edit3, Save, X, Cpu } from 'lucide-react';
+import { ShieldAlert, UserCheck, UserPlus, Key, CheckCircle, XCircle, UserMinus, Edit3, Save, X, Cpu, Eye, Search } from 'lucide-react';
+import EmployeeProfileModal from '../components/EmployeeProfileModal';
 
 const availableMachinesList = [
   { id: '700,705', name: 'Winding 700/705', unit: 'Unit 2' },
@@ -24,6 +25,10 @@ const AdminPage = () => {
   const [userRolesList, setUserRolesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Comprehensive Profile & Payroll Inspector Modal State
+  const [inspectorEmp, setInspectorEmp] = useState(null);
 
   // Token-Only Supervisor Appointment State
   const [supTokenNo, setSupTokenNo] = useState('');
@@ -291,7 +296,28 @@ const AdminPage = () => {
 
           {/* Active Employee Roster & Role Control */}
           <div className="card">
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem' }}>Registered Staff & Full Employee Details Control</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Registered Staff & Full Employee Details Control</h3>
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '0.2rem 0 0 0' }}>
+                  Click "View Profile & Payroll" to inspect complete dossier, thermal payslips, and punch history.
+                </p>
+              </div>
+
+              {/* Search Filter Input */}
+              <div style={{ position: 'relative', width: '220px' }}>
+                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                <input
+                  type="text"
+                  placeholder="Search staff or token..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="form-input"
+                  style={{ paddingLeft: '2rem', fontSize: '0.82rem', padding: '0.4rem 0.5rem 0.4rem 2rem' }}
+                />
+              </div>
+            </div>
+
             <div className="table-container" style={{ maxHeight: '420px', overflowY: 'auto' }}>
               <table>
                 <thead>
@@ -304,7 +330,12 @@ const AdminPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {userRolesList.map(usr => (
+                  {userRolesList.filter(usr => {
+                    const name = usr.employeeProfile?.name || 'Site Admin';
+                    const token = String(usr.employeeToken || '');
+                    const q = searchQuery.toLowerCase();
+                    return name.toLowerCase().includes(q) || token.includes(q);
+                  }).map(usr => (
                     <tr key={usr._id}>
                       <td><strong>#{usr.employeeToken}</strong></td>
                       <td>{usr.employeeProfile?.name || 'Site Admin'}</td>
@@ -324,6 +355,15 @@ const AdminPage = () => {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => setInspectorEmp(usr.employeeProfile || { tokenNo: usr.employeeToken, role: usr.role })}
+                            className="btn btn-primary"
+                            style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem', backgroundColor: '#0284c7' }}
+                            title="View complete employee profile, payslip tickets, deductions, and attendance history"
+                          >
+                            <Eye size={13} /> View Profile & Payroll
+                          </button>
+
                           {usr.employeeProfile && (
                             <button
                               onClick={() => openEditModal(usr.employeeProfile)}
@@ -592,6 +632,14 @@ const AdminPage = () => {
           </div>
         </div>
       )}
+
+      {/* 👁️ Comprehensive Employee Profile & Payroll Inspector Modal */}
+      <EmployeeProfileModal
+        isOpen={!!inspectorEmp}
+        onClose={() => setInspectorEmp(null)}
+        employee={inspectorEmp}
+        onEmployeeUpdated={loadAdminData}
+      />
     </div>
   );
 };

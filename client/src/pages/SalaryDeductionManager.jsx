@@ -3,13 +3,19 @@ import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import { DollarSign, Save, RefreshCw, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 
-const SalaryDeductionManager = ({ onSelectEmployeePayslip }) => {
+const SalaryDeductionManager = ({ onSelectEmployeePayslip, tokenNo }) => {
   const { user, API_BASE } = useContext(AuthContext);
   const isAdmin = user?.role === 'SiteAdmin' || user?.role === 'Supervisor';
 
   const [employees, setEmployees] = useState([]);
   // Regular employee: always their own token. Admin: can select any employee.
-  const [selectedToken, setSelectedToken] = useState(user?.employeeToken || '');
+  const [selectedToken, setSelectedToken] = useState(tokenNo || user?.employeeToken || '');
+
+  useEffect(() => {
+    if (tokenNo) {
+      setSelectedToken(tokenNo);
+    }
+  }, [tokenNo]);
 
   // Default to current month
   const now = new Date();

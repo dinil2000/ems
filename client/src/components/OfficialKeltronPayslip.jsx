@@ -21,7 +21,24 @@ const OfficialKeltronPayslip = ({ tokenNoInput, onManageDeductions }) => {
     monthOptions.push({ value: val, label });
   }
 
-  const targetToken = tokenNoInput || user?.employeeToken || '8356';
+  const [employeeList, setEmployeeList] = useState([]);
+  const [selectedToken, setSelectedToken] = useState(tokenNoInput || user?.employeeToken || '8356');
+
+  useEffect(() => {
+    if (tokenNoInput) {
+      setSelectedToken(tokenNoInput);
+    }
+  }, [tokenNoInput]);
+
+  useEffect(() => {
+    if (user?.role === 'SiteAdmin' || user?.role === 'Supervisor') {
+      axios.get(`${API_BASE}/employees?status=Active`)
+        .then(res => setEmployeeList(res.data || []))
+        .catch(err => console.error('Failed to load active employees:', err));
+    }
+  }, [user, API_BASE]);
+
+  const targetToken = selectedToken;
 
   const fetchSlip = async () => {
     setLoading(true);
@@ -65,7 +82,29 @@ const OfficialKeltronPayslip = ({ tokenNoInput, onManageDeductions }) => {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {(user?.role === 'SiteAdmin' || user?.role === 'Supervisor') && employeeList.length > 0 && (
+            <select
+              value={selectedToken}
+              onChange={(e) => setSelectedToken(e.target.value)}
+              style={{
+                backgroundColor: '#0f172a',
+                color: '#38bdf8',
+                border: '1px solid #0284c7',
+                borderRadius: '8px',
+                padding: '0.45rem 0.75rem',
+                fontSize: '0.85rem',
+                fontWeight: '700'
+              }}
+            >
+              {employeeList.map(emp => (
+                <option key={emp._id} value={emp.tokenNo}>
+                  #{emp.tokenNo} - {emp.name}
+                </option>
+              ))}
+            </select>
+          )}
+
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}

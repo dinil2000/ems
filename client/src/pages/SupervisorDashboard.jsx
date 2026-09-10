@@ -3,7 +3,8 @@ import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import PunchWidget from '../components/PunchWidget';
 import RegisterEmployeeModal from '../components/RegisterEmployeeModal';
-import { Users, Cpu, Shield, UserPlus, Sparkles, AlertTriangle, UserCheck, CheckCircle, RefreshCw, Clock } from 'lucide-react';
+import EmployeeProfileModal from '../components/EmployeeProfileModal';
+import { Users, Cpu, Shield, UserPlus, Sparkles, AlertTriangle, UserCheck, CheckCircle, RefreshCw, Clock, Eye } from 'lucide-react';
 
 const SupervisorDashboard = ({ setActiveTab }) => {
   const { user, API_BASE } = useContext(AuthContext);
@@ -14,6 +15,7 @@ const SupervisorDashboard = ({ setActiveTab }) => {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [selectedInspectorEmp, setSelectedInspectorEmp] = useState(null);
   const [message, setMessage] = useState('');
 
   const loadData = async () => {
@@ -334,6 +336,7 @@ const SupervisorDashboard = ({ setActiveTab }) => {
                       <th>Gender</th>
                       <th>Monthly Base</th>
                       <th>Machine Expertise</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -363,6 +366,16 @@ const SupervisorDashboard = ({ setActiveTab }) => {
                             ))}
                           </div>
                         </td>
+                        <td>
+                          <button
+                            onClick={() => setSelectedInspectorEmp(emp)}
+                            className="btn btn-primary"
+                            style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem', backgroundColor: '#0284c7' }}
+                            title="Inspect full profile, authentic Keltron payslip, and attendance history"
+                          >
+                            <Eye size={13} /> Profile & Slip
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -377,6 +390,13 @@ const SupervisorDashboard = ({ setActiveTab }) => {
         isOpen={isRegisterOpen}
         onClose={() => setIsRegisterOpen(false)}
         onSuccess={loadData}
+      />
+
+      <EmployeeProfileModal
+        isOpen={!!selectedInspectorEmp}
+        onClose={() => setSelectedInspectorEmp(null)}
+        employee={selectedInspectorEmp}
+        onEmployeeUpdated={loadData}
       />
     </div>
   );

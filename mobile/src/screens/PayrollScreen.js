@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   TextInput,
   Alert,
+  Modal,
+  SafeAreaView,
 } from 'react-native';
 import axios from 'axios';
 import { getApiUrlList } from '../config/api';
@@ -30,15 +32,52 @@ export default function PayrollScreen({ user, onBack }) {
 
   const isAdminOrSupervisor = user?.role === 'SiteAdmin' || user?.role === 'Supervisor';
 
-  const getCurrentMonth = () => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  };
+  // Month selector state (current + 5 past months)
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
+
+  const monthOptions = [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const label = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+    monthOptions.push({ value: val, label });
+  }
+
+  // Employee Picker State for Admin / Supervisor
+  const [allEmployees, setAllEmployees] = useState([]);
+  const [pickerModalVisible, setPickerModalVisible] = useState(false);
+  const [empSearch, setEmpSearch] = useState('');
+
+  useEffect(() => {
+    if (isAdminOrSupervisor) {
+      const loadEmployees = async () => {
+        try {
+          const urls = await getApiUrlList();
+          for (const url of urls) {
+            try {
+              const res = await axios.get(`${url}/employees?status=Active`, { timeout: 6000 });
+              if (res.data) {
+                setAllEmployees(res.data);
+                break;
+              }
+            } catch (e) {}
+          }
+        } catch (err) {
+          console.error('Failed to load active employees:', err);
+        }
+      };
+      loadEmployees();
+    }
+  }, [isAdminOrSupervisor]);
 
   const getCurrentMonthLabel = () => {
-    const now = new Date();
+    const [y, m] = selectedMonth.split('-');
+    const mIdx = parseInt(m, 10) - 1;
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    return `${months[now.getMonth()]} ${now.getFullYear()}`;
+    return `${months[mIdx]} ${y}`;
   };
 
   const fetchPayslip = async (tokenToFetch) => {
@@ -46,10 +85,9 @@ export default function PayrollScreen({ user, onBack }) {
     try {
       const targetToken = tokenToFetch || selectedToken || user.employeeToken;
       const urls = await getApiUrlList();
-      const currentMonth = getCurrentMonth();
       for (const url of urls) {
         try {
-          const res = await axios.get(`${url}/payroll/slip/${targetToken}?month=${currentMonth}`, { timeout: 6000 });
+          const res = await axios.get(`${url}/payroll/slip/${targetToken}?month=${selectedMonth}`, { timeout: 6000 });
           if (res.data) {
             setSlip(res.data);
             if (res.data.deductionsRaw) {
@@ -99,19 +137,18 @@ export default function PayrollScreen({ user, onBack }) {
     } else if (activeTab === 'register') {
       fetchRegister();
     }
-  }, [activeTab, selectedToken]);
+  }, [activeTab, selectedToken, selectedMonth]);
 
   const handleSaveDeductions = async () => {
     setSaving(true);
     try {
       const urls = await getApiUrlList();
-      const currentMonth = getCurrentMonth();
       let res = null;
       for (const url of urls) {
         try {
           res = await axios.post(`${url}/payroll/deductions`, {
             tokenNo: selectedToken || user.employeeToken,
-            yearMonth: currentMonth,
+            yearMonth: selectedMonth,
             canteenDeduction: Number(canteenDeduction),
             festivalAdvance: Number(festivalAdvance),
             providentFund: Number(providentFund),
@@ -139,6 +176,22 @@ export default function PayrollScreen({ user, onBack }) {
 
   return (
     <View style={styles.container}>
+      {/* Admin / Supervisor Active Employee Selector Bar */}
+      {isAdminOrSupervisor && (
+        <TouchableOpacity
+          style={styles.empSelectorBar}
+          onPress={() => setPickerModalVisible(true)}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+            <Text style={styles.empSelectorBadge}>#{selectedToken}</Text>
+            <Text style={styles.empSelectorName} numberOfLines={1}>
+              {slip?.employeeName || (allEmployees.find(e => e.tokenNo === selectedToken)?.name) || `Staff #${selectedToken}`}
+            </Text>
+          </View>
+          <Text style={styles.empSelectorChangeText}>🔁 Change Staff</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Sub-Tab Navigation Toggle */}
       <View style={styles.toggleBar}>
         <TouchableOpacity
@@ -175,6 +228,21 @@ export default function PayrollScreen({ user, onBack }) {
         ) : activeTab === 'slip' && slip ? (
           /* Official Thermal Payslip Ticket Component matching exact physical slip */
           <View>
+            {/* Month Selector Horizontal Pills */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthPillRow}>
+              {monthOptions.map((opt) => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.monthPill, selectedMonth === opt.value && styles.monthPillActive]}
+                  onPress={() => setSelectedMonth(opt.value)}
+                >
+                  <Text style={selectedMonth === opt.value ? styles.monthPillTextActive : styles.monthPillText}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
             <View style={styles.ticketCard}>
               {/* Header */}
               <Text style={styles.tCompany}>{slip.companyName}</Text>
@@ -379,6 +447,68 @@ export default function PayrollScreen({ user, onBack }) {
           </View>
         )}
       </ScrollView>
+
+      {/* Employee Quick-Picker Modal for Admin & Supervisor */}
+      <Modal
+        visible={pickerModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setPickerModalVisible(false)}
+      >
+        <SafeAreaView style={styles.container}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>Select Staff to Inspect Payroll</Text>
+            <TouchableOpacity onPress={() => setPickerModalVisible(false)} style={styles.pickerCloseBtn}>
+              <Text style={styles.pickerCloseText}>✕ Close</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ padding: 14 }}>
+            <TextInput
+              style={styles.pickerSearchInput}
+              placeholder="Search staff name or token #..."
+              placeholderTextColor="#64748b"
+              value={empSearch}
+              onChangeText={setEmpSearch}
+            />
+          </View>
+
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 40 }}>
+            {allEmployees
+              .filter((e) => {
+                const q = empSearch.toLowerCase();
+                return (e.name && e.name.toLowerCase().includes(q)) || String(e.tokenNo).includes(q);
+              })
+              .map((e) => {
+                const isSelected = selectedToken === e.tokenNo;
+                return (
+                  <TouchableOpacity
+                    key={e._id || e.tokenNo}
+                    style={[styles.empPickRow, isSelected && styles.empPickRowActive]}
+                    onPress={() => {
+                      setSelectedToken(e.tokenNo);
+                      setPickerModalVisible(false);
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.empPickName, isSelected && { color: '#38bdf8' }]}>
+                        {e.name}
+                      </Text>
+                      <Text style={styles.empPickSub}>
+                        Token #{e.tokenNo} • {e.qualification || 'ITI'} • ₹{e.dailyRate ? parseFloat(e.dailyRate).toFixed(2) : '825.94'}/day
+                      </Text>
+                    </View>
+                    {isSelected ? (
+                      <Text style={styles.activePillText}>✓ Selected</Text>
+                    ) : (
+                      <Text style={styles.selectPillText}>Select →</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
@@ -682,5 +812,133 @@ const styles = StyleSheet.create({
     color: '#38bdf8',
     fontSize: 12,
     fontWeight: '700',
+  },
+  empSelectorBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#0284c7',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginTop: 10,
+  },
+  empSelectorBadge: {
+    backgroundColor: '#0284c7',
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  empSelectorName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  empSelectorChangeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#38bdf8',
+  },
+  monthPillRow: {
+    marginBottom: 10,
+  },
+  monthPill: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  monthPillActive: {
+    backgroundColor: '#0284c7',
+    borderColor: '#0284c7',
+  },
+  monthPillText: {
+    color: '#94a3b8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  monthPillTextActive: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    backgroundColor: '#1e293b',
+  },
+  pickerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#f8fafc',
+  },
+  pickerCloseBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  pickerCloseText: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  pickerSearchInput: {
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    color: '#f8fafc',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+  },
+  empPickRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  empPickRowActive: {
+    borderColor: '#0284c7',
+    backgroundColor: 'rgba(2, 132, 199, 0.1)',
+  },
+  empPickName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  empPickSub: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  activePillText: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  selectPillText: {
+    color: '#64748b',
+    fontSize: 12,
   },
 });
