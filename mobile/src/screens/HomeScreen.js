@@ -22,6 +22,7 @@ import {
   KELTRON_KANNUR_GEOFENCE,
   calculateDistanceToKeltron,
   setupGeofenceTracking,
+  requestAndStartGeofenceTracking,
   sendAutoPunchNotification,
 } from '../utils/geofence';
 import {
@@ -85,17 +86,13 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
   const requestBgPerm = async () => {
     try {
-      const { status } = await Location.requestBackgroundPermissionsAsync();
-      if (status === 'granted') {
+      const res = await requestAndStartGeofenceTracking();
+      if (res.success) {
         setHasBgPermission(true);
-        await setupGeofenceTracking();
         await requestBatteryOptimization();
         Alert.alert('Background Location Enabled', 'Automated Punch In/Out will now run automatically in the background even when app is closed!');
       } else {
-        Alert.alert(
-          'Background Permission Required',
-          'To auto-punch without opening the app, please select "Allow all the time" in Location settings.'
-        );
+        Alert.alert('Location Permission Required', res.message || 'Please enable "Allow all the time" in Android Location settings.');
       }
     } catch (e) {
       Alert.alert('Error', e.message);

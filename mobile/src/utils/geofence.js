@@ -311,26 +311,24 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
 });
 
 // ── Start All Background Services with 24/7 Foreground Engine ───────────
+// Non-blocking & crash-proof on app launch (checks without throwing native exceptions)
 export const setupGeofenceTracking = async () => {
   try {
     await setupNotificationChannel();
-    await scheduleDailyShiftAlarms();
+    await scheduleDailyShiftAlarms().catch(() => {});
 
-    try {
-      await Notifications.requestPermissionsAsync();
-    } catch (e) {}
-
-    const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
-    if (fgStatus !== 'granted') {
-      return { success: false, message: 'Foreground location denied.' };
+    // Safely check without popping modal dialogs during initial app startup
+    const fg = await Location.getForegroundPermissionsAsync().catch(() => ({ status: 'undetermined' }));
+    if (fg.status !== 'granted') {
+      return { success: false, message: 'Foreground location not yet granted.' };
     }
 
-    const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
-    if (bgStatus !== 'granted') {
-      return { success: false, message: 'Background location required ("Allow all the time").' };
+    const bg = await Location.getBackgroundPermissionsAsync().catch(() => ({ status: 'undetermined' }));
+    if (bg.status !== 'granted') {
+      return { success: false, message: 'Background location not yet granted.' };
     }
 
-    // ── Start Native Geofencing (Low Power OS Hardware Fence) ───────
+    // Both granted -> start geofencing and background service
     if (await TaskManager.isTaskDefined(GEOFENCE_TASK_NAME)) {
       try {
         const isRunning = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK_NAME);
@@ -339,7 +337,6 @@ export const setupGeofenceTracking = async () => {
       await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, [KELTRON_KANNUR_GEOFENCE]);
     }
 
-    // ── Start 24/7 Persistent Foreground Location Service ───────────
     await ensureBackgroundLocationRunning();
 
     return {
@@ -347,7 +344,33 @@ export const setupGeofenceTracking = async () => {
       message: '📍 24/7 Background Auto-Punch Active (300m Plant Zone)',
     };
   } catch (err) {
-    console.error('[Geofence] Setup error:', err);
+    console.log('[Geofence] Setup safe bypass:', err.message);
+    return { success: false, message: err.message };
+  }
+};
+
+// Explicit interactive permission request (called only when user taps banner in UI)
+export const requestAndStartGeofenceTracking = async () => {
+  try {
+    await setupNotificationChannel();
+
+    try {
+      await Notifications.requestPermissionsAsync();
+    } catch (e) {}
+
+    const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+    if (fgStatus !== 'granted') {
+      return { success: false, message: 'Foreground location permission is required.' };
+    }
+
+    const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+    if (bgStatus !== 'granted') {
+      return { success: false, message: 'Background location ("Allow all the time") is required for automated punching.' };
+    }
+
+    return await setupGeofenceTracking();
+  } catch (err) {
+    console.error('[Geofence] Request error:', err);
     return { success: false, message: err.message };
   }
 };
