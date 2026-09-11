@@ -133,15 +133,27 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
     return () => clearInterval(timer);
   }, [attendance]);
 
+  // Update active shift when attendance updates
+  useEffect(() => {
+    const updateShift = async () => {
+      try {
+        const currentShift = await getActiveShift(new Date(), attendance).catch(() => SHIFT_PRESETS[0]);
+        setActiveShiftState(currentShift);
+      } catch (e) {}
+    };
+    updateShift();
+  }, [attendance]);
+
+  // Initial geofence initialization (Mount only)
   useEffect(() => {
     const init = async () => {
-      checkBgPermission();
-      const currentShift = await getActiveShift(new Date(), attendance);
-      setActiveShiftState(currentShift);
-      await setupGeofenceTracking().catch(e => console.log('Geofence setup note:', e.message));
+      try {
+        checkBgPermission();
+        await setupGeofenceTracking().catch(() => {});
+      } catch (e) {}
     };
     init();
-  }, [attendance]);
+  }, []);
 
   // Live Location Watcher with Hysteresis & Accuracy Filtering
   useEffect(() => {
@@ -150,95 +162,96 @@ export default function HomeScreen({ user, onLogout, onNavigate }) {
 
     const startLocationWatch = async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setLocationStatus('📍 GPS Permission Denied (Using Factory Default)');
+        const perm = await Location.getForegroundPermissionsAsync().catch(() => ({ status: 'undetermined' }));
+        if (perm?.status !== 'granted') {
+          setLocationStatus('📍 Location Permission Needed for Auto-Punch');
           return;
         }
 
         subscriber = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.High,
-            timeInterval: 5000,
-            distanceInterval: 10,
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 10000,
+            distanceInterval: 15,
           },
           (loc) => {
-            const accuracy = loc.coords.accuracy || 100;
-            // Ignore extreme wild GPS jumps (> 200m). 200m accommodates realistic indoor factory attenuation
-            if (accuracy > 200) return;
+            try {
+              if (!loc || !loc.coords) return;
+              const accuracy = loc.coords.accuracy || 100;
+              // Ignore extreme wild GPS jumps (> 200m)
+              if (accuracy > 200) return;
 
-            const lat = loc.coords.latitude;
-            const lng = loc.coords.longitude;
-            setUserLocation({ latitude: lat, longitude: lng });
+              const lat = loc.coords.latitude;
+              const lng = loc.coords.longitude;
+              setUserLocation({ latitude: lat, longitude: lng });
 
-            const dist = calculateDistanceToKeltron(lat, lng);
-            setDistanceMeters(dist);
+              const dist = calculateDistanceToKeltron(lat, lng);
+              setDistanceMeters(dist);
 
-            const isInside300m = dist <= KELTRON_KANNUR_GEOFENCE.radius;
-            const isOutside400m = dist >= (KELTRON_KANNUR_GEOFENCE.exitRadius || 400);
+              const isInside300m = dist <= KELTRON_KANNUR_GEOFENCE.radius;
+              const isOutside400m = dist >= (KELTRON_KANNUR_GEOFENCE.exitRadius || 400);
 
-            if (isInside300m) {
-              setLocationStatus(`📍 Inside 300m Plant Boundary (${dist}m)`);
-              outsideCounter = 0;
-            } else if (isOutside400m) {
-              setLocationStatus(`📍 Outside Plant Perimeter (${dist}m)`);
-            } else {
-              setLocationStatus(`📍 Buffer Zone (${dist}m from Plant)`);
-            }
-
-            const now = Date.now();
-            const timeSinceLastPunch = now - lastPunchTimeRef.current;
-
-            // When user is confirmed outside, clear any post-punch-out cooldown so entering triggers punch in
-            if (isOutside400m && lastPunchTypeRef.current === 'OUT' && timeSinceLastPunch > 60000) {
-              lastPunchTypeRef.current = null;
-            }
-
-            // Real-Time Automated Punch In / Out Trigger with Hysteresis & Cooldown Protection
-            if (autoPunchEnabled && !isPunchingInProgressRef.current) {
-              // Check if user is currently on shift (only active if punchIn is within the last 16h and NOT punched out)
-              const punchInTime = attendance?.punchIn ? new Date(attendance.punchIn).getTime() : 0;
-              const isSessionRecent = (now - punchInTime) < 16 * 60 * 60 * 1000;
-              const isPunchedIn = Boolean(isSessionRecent && attendance?.punchIn && !attendance?.punchOut);
-
-              // 1. ENTER 300m boundary -> Auto Punch In
-              // Cooldown: Do NOT punch in if user just punched out < 10 mins ago (allows leaving/canteen)
-              const punchInCooldown = lastPunchTypeRef.current === 'OUT' && timeSinceLastPunch < 600000;
-              if (isInside300m && !isPunchedIn && !punchInCooldown) {
-                isPunchingInProgressRef.current = true;
-                setAutoPunchMessage(`⚡ Auto-Punched In! Entered 300m perimeter (${dist}m)`);
-                handleAutoPunchIn(lat, lng).finally(() => {
-                  isPunchingInProgressRef.current = false;
-                });
+              if (isInside300m) {
+                setLocationStatus(`📍 Inside 300m Plant Boundary (${dist}m)`);
+                outsideCounter = 0;
+              } else if (isOutside400m) {
+                setLocationStatus(`📍 Outside Plant Perimeter (${dist}m)`);
+              } else {
+                setLocationStatus(`📍 Buffer Zone (${dist}m from Plant)`);
               }
-              // 2. EXIT past 400m boundary with debouncing (3 consecutive checks) -> Auto Punch Out
-              // Cooldown: Do NOT punch out if user just punched in < 5 mins ago
-              else if (isOutside400m && isPunchedIn) {
-                const punchOutCooldown = lastPunchTypeRef.current === 'IN' && timeSinceLastPunch < 300000;
-                if (!punchOutCooldown) {
-                  outsideCounter += 1;
-                  if (outsideCounter >= 3) {
-                    isPunchingInProgressRef.current = true;
-                    setAutoPunchMessage(`⚡ Auto-Punched Out! Left plant perimeter (${dist}m)`);
-                    handleAutoPunchOut(lat, lng).finally(() => {
-                      isPunchingInProgressRef.current = false;
-                      outsideCounter = 0;
-                    });
+
+              const now = Date.now();
+              const timeSinceLastPunch = now - lastPunchTimeRef.current;
+
+              // When user is confirmed outside, clear any post-punch-out cooldown
+              if (isOutside400m && lastPunchTypeRef.current === 'OUT' && timeSinceLastPunch > 60000) {
+                lastPunchTypeRef.current = null;
+              }
+
+              // Real-Time Automated Punch In / Out Trigger
+              if (autoPunchEnabled && !isPunchingInProgressRef.current) {
+                const punchInTime = attendance?.punchIn ? new Date(attendance.punchIn).getTime() : 0;
+                const isSessionRecent = (now - punchInTime) < 16 * 60 * 60 * 1000;
+                const isPunchedIn = Boolean(isSessionRecent && attendance?.punchIn && !attendance?.punchOut);
+
+                const punchInCooldown = lastPunchTypeRef.current === 'OUT' && timeSinceLastPunch < 600000;
+                if (isInside300m && !isPunchedIn && !punchInCooldown) {
+                  isPunchingInProgressRef.current = true;
+                  setAutoPunchMessage(`⚡ Auto-Punched In! Entered 300m perimeter (${dist}m)`);
+                  handleAutoPunchIn(lat, lng).finally(() => {
+                    isPunchingInProgressRef.current = false;
+                  });
+                } else if (isOutside400m && isPunchedIn) {
+                  const punchOutCooldown = lastPunchTypeRef.current === 'IN' && timeSinceLastPunch < 300000;
+                  if (!punchOutCooldown) {
+                    outsideCounter += 1;
+                    if (outsideCounter >= 3) {
+                      isPunchingInProgressRef.current = true;
+                      setAutoPunchMessage(`⚡ Auto-Punched Out! Left plant perimeter (${dist}m)`);
+                      handleAutoPunchOut(lat, lng).finally(() => {
+                        isPunchingInProgressRef.current = false;
+                        outsideCounter = 0;
+                      });
+                    }
                   }
                 }
               }
+            } catch (watchErr) {
+              console.log('Location watch callback handled error:', watchErr.message);
             }
           }
-        );
+        ).catch(e => console.log('watchPositionAsync safe catch:', e.message));
       } catch (err) {
-        console.warn('Location watch error:', err.message);
+        console.log('Location watch start error:', err.message);
       }
     };
 
     startLocationWatch();
 
     return () => {
-      if (subscriber) subscriber.remove();
+      try {
+        if (subscriber) subscriber.remove();
+      } catch (e) {}
     };
   }, [autoPunchEnabled, attendance]);
 

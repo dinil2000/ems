@@ -191,16 +191,30 @@ export const ensureBackgroundLocationRunning = async () => {
     const isDefined = await TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK);
     if (!isDefined) return;
 
+    // 1. MUST verify foreground location permission is granted first
+    const fg = await Location.getForegroundPermissionsAsync().catch(() => ({ status: 'undetermined' }));
+    if (fg?.status !== 'granted') {
+      console.log('[24/7 Attendance Engine] Foreground location permission not granted. Skipping service start.');
+      return;
+    }
+
+    // 2. MUST verify background location permission is granted first
+    const bg = await Location.getBackgroundPermissionsAsync().catch(() => ({ status: 'undetermined' }));
+    if (bg?.status !== 'granted') {
+      console.log('[24/7 Attendance Engine] Background location permission not granted. Skipping service start.');
+      return;
+    }
+
     const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK).catch(() => false);
     if (!isRunning) {
       console.log('🚀 [24/7 Attendance Engine] Starting Persistent Background Location Service');
       await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 20000,      // check every 20 seconds
-        distanceInterval: 10,      // or 10m movement
-        deferredUpdatesInterval: 20000,
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 30000,      // check every 30 seconds
+        distanceInterval: 15,      // or 15m movement
+        deferredUpdatesInterval: 30000,
         pausesUpdatesAutomatically: false,
-        showsBackgroundLocationIndicator: true,
+        showsBackgroundLocationIndicator: false,
         activityType: Location.ActivityType.OtherNavigation,
         foregroundService: {
           notificationTitle: '📍 Keltron EMS: Automated Attendance Active',
@@ -208,30 +222,39 @@ export const ensureBackgroundLocationRunning = async () => {
           notificationColor: '#0284c7',
           killServiceOnDestroy: false,
         },
+      }).catch((startErr) => {
+        console.log('[24/7 Attendance Engine] startLocationUpdatesAsync safe catch:', startErr.message);
       });
     }
   } catch (err) {
-    console.error('[24/7 Attendance Engine] Error ensuring service runs:', err.message);
+    console.log('[24/7 Attendance Engine] Error ensuring service runs:', err.message);
   }
 };
 
 // ── Synchronize State from Punch In / Out Events ────────────────────────
 export const syncAlarmState = async (isPunchedIn) => {
   try {
-    await AsyncStorage.setItem('ems_is_on_shift', isPunchedIn ? 'true' : 'false');
-    await ensureBackgroundLocationRunning();
-    const shift = await getActiveShift();
+    await AsyncStorage.setItem('ems_is_on_shift', isPunchedIn ? 'true' : 'false').catch(() => {});
+    await ensureBackgroundLocationRunning().catch(() => {});
+    const shift = await getActiveShift().catch(() => SHIFT_PRESETS[0]);
     return evaluateShiftWindow(shift, isPunchedIn);
   } catch (e) {
-    console.error('[Alarm Manager] syncAlarmState error:', e);
+    console.log('[Alarm Manager] syncAlarmState error:', e.message);
   }
 };
 
 // ── Schedule Daily Android Alarm Reminder Notifications ────────────────
 export const scheduleDailyShiftAlarms = async () => {
   try {
+    // Check notification permission first to prevent crashing on Android 13+
+    const notifPerm = await Notifications.getPermissionsAsync().catch(() => ({ status: 'undetermined' }));
+    if (notifPerm?.status !== 'granted') {
+      console.log('[Alarm Manager] Notification permission not yet granted. Skipping scheduling.');
+      return;
+    }
+
     await setupAlarmChannel();
-    const shift = await getActiveShift();
+    const shift = await getActiveShift().catch(() => SHIFT_PRESETS[0]);
 
     await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
 
@@ -257,7 +280,7 @@ export const scheduleDailyShiftAlarms = async () => {
         minute: morningMin,
         repeats: true,
       },
-    });
+    }).catch(() => {});
 
     // 2. Shift End Alarm (Shift end time)
     await Notifications.scheduleNotificationAsync({
@@ -273,7 +296,7 @@ export const scheduleDailyShiftAlarms = async () => {
         minute: shift.endMin,
         repeats: true,
       },
-    });
+    }).catch(() => {});
 
     console.log(`⏰ [Alarm Manager] Shift alarms set for ${String(actualMorningHour).padStart(2,'0')}:${String(morningMin).padStart(2,'0')} and ${String(shift.endHour).padStart(2,'0')}:${String(shift.endMin).padStart(2,'0')}`);
   } catch (err) {
