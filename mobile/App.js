@@ -190,7 +190,7 @@ export default function App() {
             <Text style={{ fontSize: 13, fontWeight: '800', color: '#f8fafc' }}>
               {currentScreen === 'home' ? 'Keltron MPP EMS' : getScreenHeaderTitle()}
             </Text>
-            <Text style={{ fontSize: 9, color: '#06b6d4', fontWeight: '600' }}>Kannur Unit • 300m Geofence</Text>
+            <Text style={{ fontSize: 9, color: '#06b6d4', fontWeight: '600' }}>Kannur Unit • 500m Geofence</Text>
           </View>
         </View>
 

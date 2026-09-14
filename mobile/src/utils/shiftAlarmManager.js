@@ -155,7 +155,7 @@ export const evaluateShiftWindow = (shift, isCurrentlyOnShift, now = new Date())
       return {
         status: 'HUNTING_PUNCH_IN',
         badge: '🟢 Active: Punch-In Window Open',
-        description: `Punch-In window (${shift.inWindowLabel}). Entering 300m plant zone will auto punch in.`,
+        description: `Punch-In window (${shift.inWindowLabel}). Entering 500m plant zone will auto punch in.`,
         color: '#10b981',
       };
     } else {
@@ -171,7 +171,7 @@ export const evaluateShiftWindow = (shift, isCurrentlyOnShift, now = new Date())
       return {
         status: 'HUNTING_PUNCH_OUT',
         badge: '🟢 Shift Completed: Ready for Punch-Out',
-        description: `Shift ended (${shift.label.split('–')[1].trim()}). Leaving 400m perimeter will auto punch out.`,
+        description: `Shift ended (${shift.label.split('–')[1].trim()}). Leaving 650m perimeter will auto punch out.`,
         color: '#f59e0b',
       };
     } else {
@@ -218,7 +218,7 @@ export const ensureBackgroundLocationRunning = async () => {
         activityType: Location.ActivityType.OtherNavigation,
         foregroundService: {
           notificationTitle: '📍 Keltron EMS: Automated Attendance Active',
-          notificationBody: '24/7 plant geofence monitoring (Auto Punch In / Out).',
+          notificationBody: '24/7 factory geofence monitoring & shift timer active.',
           notificationColor: '#0284c7',
           killServiceOnDestroy: false,
         },
@@ -254,51 +254,90 @@ export const scheduleDailyShiftAlarms = async () => {
     }
 
     await setupAlarmChannel();
-    const shift = await getActiveShift().catch(() => SHIFT_PRESETS[0]);
-
     await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
 
-    // 1. Morning / Shift Start Alarm (30 mins before shift start)
-    const morningHour = shift.startHour;
-    let morningMin = shift.startMin - 30;
-    let actualMorningHour = morningHour;
-    if (morningMin < 0) {
-      morningMin += 60;
-      actualMorningHour = (morningHour - 1 + 24) % 24;
+    // Schedule comprehensive recurring daily alarms for ALL shifts:
+    const allShiftAlarms = [
+      // Shift 1 (07:00 - 15:00)
+      {
+        id: 'shift_1_morning',
+        title: '⏰ Keltron Shift 1 Reminder: 07:00 AM',
+        body: 'Shift 1 starts at 07:00 AM. Auto Punch-In is active as you enter the 500m plant zone.',
+        hour: 6,
+        minute: 30,
+      },
+      {
+        id: 'shift_1_evening',
+        title: '⏰ Keltron Shift 1 End: 03:00 PM',
+        body: 'Shift 1 completed. Auto Punch-Out will record when you leave the plant.',
+        hour: 15,
+        minute: 0,
+      },
+      // General Shift (08:30 - 16:30)
+      {
+        id: 'general_morning',
+        title: '⏰ Keltron General Shift Reminder: 08:30 AM',
+        body: 'General Shift starts at 08:30 AM. Auto Punch-In is active as you enter the 500m plant zone.',
+        hour: 8,
+        minute: 0,
+      },
+      {
+        id: 'general_evening',
+        title: '⏰ Keltron General Shift End: 04:30 PM',
+        body: 'General Shift completed. Auto Punch-Out will record when you leave the plant.',
+        hour: 16,
+        minute: 30,
+      },
+      // Shift 2 (15:00 - 23:00)
+      {
+        id: 'shift_2_afternoon',
+        title: '⏰ Keltron Shift 2 Reminder: 03:00 PM',
+        body: 'Shift 2 starts at 03:00 PM. Auto Punch-In is active as you enter the 500m plant zone.',
+        hour: 14,
+        minute: 30,
+      },
+      {
+        id: 'shift_2_night',
+        title: '⏰ Keltron Shift 2 End: 11:00 PM',
+        body: 'Shift 2 completed. Auto Punch-Out will record when you leave the plant.',
+        hour: 23,
+        minute: 0,
+      },
+      // Shift 3 (23:00 - 07:00)
+      {
+        id: 'shift_3_night',
+        title: '⏰ Keltron Night Shift Reminder: 11:00 PM',
+        body: 'Night Shift starts at 11:00 PM. Auto Punch-In is active as you enter the 500m plant zone.',
+        hour: 22,
+        minute: 30,
+      },
+      {
+        id: 'shift_3_morning',
+        title: '⏰ Keltron Night Shift End: 07:00 AM',
+        body: 'Night Shift completed. Auto Punch-Out will record when you leave the plant.',
+        hour: 7,
+        minute: 0,
+      },
+    ];
+
+    for (const alarm of allShiftAlarms) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: alarm.title,
+          body: alarm.body,
+          sound: 'default',
+          channelId: ALARM_CHANNEL_ID,
+          data: { action: alarm.id },
+        },
+        trigger: {
+          hour: alarm.hour,
+          minute: alarm.minute,
+          repeats: true,
+        },
+      }).catch((err) => console.log('Alarm schedule error:', err.message));
     }
 
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `⏰ Keltron Shift Reminder: ${shift.name}`,
-        body: `Shift starts at ${shift.label.split('–')[0].trim()}. Auto Punch-In is active as you enter the plant.`,
-        sound: 'default',
-        channelId: ALARM_CHANNEL_ID,
-        data: { action: 'SHIFT_START_REMINDER' },
-      },
-      trigger: {
-        hour: actualMorningHour,
-        minute: morningMin,
-        repeats: true,
-      },
-    }).catch(() => {});
-
-    // 2. Shift End Alarm (Shift end time)
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `⏰ Keltron Shift End: ${shift.name}`,
-        body: `Shift completed at ${shift.label.split('–')[1].trim()}. Auto Punch-Out will record when you leave the plant.`,
-        sound: 'default',
-        channelId: ALARM_CHANNEL_ID,
-        data: { action: 'SHIFT_END_REMINDER' },
-      },
-      trigger: {
-        hour: shift.endHour,
-        minute: shift.endMin,
-        repeats: true,
-      },
-    }).catch(() => {});
-
-    console.log(`⏰ [Alarm Manager] Shift alarms set for ${String(actualMorningHour).padStart(2,'0')}:${String(morningMin).padStart(2,'0')} and ${String(shift.endHour).padStart(2,'0')}:${String(shift.endMin).padStart(2,'0')}`);
+    console.log('⏰ [Alarm Manager] All 8 daily shift alarm reminders scheduled successfully.');
   } catch (err) {
     console.log('[Alarm Manager] Error scheduling alarms:', err.message);
   }

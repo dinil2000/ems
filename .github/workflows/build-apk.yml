@@ -107,6 +107,51 @@ jobs:
 
           with open('app/build.gradle', 'w') as f:
               f.write(content)
+
+          # 3. Ensure AndroidManifest.xml has tools:replace on TaskBroadcastReceiver and NotificationsService for BOOT_COMPLETED
+          with open('app/src/main/AndroidManifest.xml', 'r') as f:
+              manifest = f.read()
+
+          if 'xmlns:tools="http://schemas.android.com/tools"' not in manifest:
+              manifest = manifest.replace('<manifest ', '<manifest xmlns:tools="http://schemas.android.com/tools" ')
+
+          if 'expo.modules.taskManager.TaskBroadcastReceiver' not in manifest:
+              receiver_task = '''
+        <receiver
+            android:name="expo.modules.taskManager.TaskBroadcastReceiver"
+            android:exported="true"
+            tools:replace="android:exported">
+            <intent-filter>
+                <action android:name="expo.modules.taskManager.TaskBroadcastReceiver.INTENT_ACTION" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+              '''
+              manifest = manifest.replace('</application>', receiver_task + '\n    </application>')
+
+          if 'expo.modules.notifications.service.NotificationsService' not in manifest:
+              receiver_notif = '''
+        <receiver
+            android:name="expo.modules.notifications.service.NotificationsService"
+            android:exported="true"
+            tools:replace="android:exported">
+            <intent-filter android:priority="-1">
+                <action android:name="expo.modules.notifications.NOTIFICATION_EVENT" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.REBOOT" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+              '''
+              manifest = manifest.replace('</application>', receiver_notif + '\n    </application>')
+
+          with open('app/src/main/AndroidManifest.xml', 'w') as f:
+              f.write(manifest)
           "
 
       - name: 📦 Build Signed Production Release APK

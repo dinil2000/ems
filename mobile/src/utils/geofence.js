@@ -27,11 +27,11 @@ import {
 
 // ── Company Geofence Coordinates & Hysteresis Boundaries ──────────────
 export const KELTRON_KANNUR_GEOFENCE = {
-  identifier: 'KELTRON_KANNUR_PLANT_300M',
+  identifier: 'KELTRON_KANNUR_PLANT_500M',
   latitude: 11.983878,
   longitude: 75.374253,
-  radius: 300,         // Enter threshold (within 300 meters)
-  exitRadius: 400,     // Exit threshold (must be past 400 meters with hysteresis)
+  radius: 500,         // Enter threshold (within 500 meters)
+  exitRadius: 650,     // Exit threshold (must be past 650 meters with hysteresis)
   notifyOnEnter: true,
   notifyOnExit: true,
 };
@@ -178,13 +178,13 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
         return;
       }
 
-      console.log(`📍 [AUTO-PUNCH] Inside 300m zone → Punch IN for Token #${tokenNo}`);
+      console.log(`📍 [AUTO-PUNCH] Inside 500m zone → Punch IN for Token #${tokenNo}`);
       const res = await apiCallWithFailover('POST', '/attendance/punch-in', {
         tokenNo,
         latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
         longitude: lng || KELTRON_KANNUR_GEOFENCE.longitude,
         isGeofencedAutoPunch: true,
-        locationName: 'Keltron Kannur Plant (Inside 300m Geofence)',
+        locationName: 'Keltron Kannur Plant (Inside 500m Geofence)',
       });
 
       await AsyncStorage.multiSet([
@@ -195,7 +195,7 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
       ]);
 
       await sendAutoPunchNotification(
-        '🟢 Auto Punched In (300m Zone)',
+        '🟢 Auto Punched In (500m Zone)',
         `Token #${tokenNo} punched in at ${timeStr} — entered Keltron Kannur Plant perimeter.`
       );
 
@@ -206,13 +206,22 @@ export const performBackgroundAutoPunch = async (isPunchIn, lat, lng) => {
         return; // already off-shift
       }
 
-      console.log(`👋 [AUTO-PUNCH] Exited past 400m zone → Punch OUT for Token #${tokenNo}`);
+      // CRITICAL DISTANCE CHECK: Never punch out if still within 650m perimeter!
+      if (lat && lng) {
+        const dist = calculateDistanceToKeltron(lat, lng);
+        if (dist < (KELTRON_KANNUR_GEOFENCE.exitRadius || 650)) {
+          console.log(`[AUTO-PUNCH] Skipping false punch-out: Current distance (${dist}m) is still within ${KELTRON_KANNUR_GEOFENCE.exitRadius}m perimeter.`);
+          return;
+        }
+      }
+
+      console.log(`👋 [AUTO-PUNCH] Exited past 650m zone → Punch OUT for Token #${tokenNo}`);
       const res = await apiCallWithFailover('POST', '/attendance/punch-out', {
         tokenNo,
         latitude: lat || KELTRON_KANNUR_GEOFENCE.latitude,
         longitude: lng || KELTRON_KANNUR_GEOFENCE.longitude,
         isGeofencedAutoPunch: true,
-        locationName: 'Keltron Kannur Plant (Exited 300m Geofence)',
+        locationName: 'Keltron Kannur Plant (Exited 500m Geofence)',
       });
 
       await AsyncStorage.multiSet([
@@ -253,9 +262,16 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
       await performBackgroundAutoPunch(true, KELTRON_KANNUR_GEOFENCE.latitude, KELTRON_KANNUR_GEOFENCE.longitude);
     } else if (eventType === Location.GeofencingEventType.Exit) {
       const lastLoc = await Location.getLastKnownPositionAsync().catch(() => null);
-      const lat = lastLoc?.coords?.latitude || KELTRON_KANNUR_GEOFENCE.latitude;
-      const lng = lastLoc?.coords?.longitude || KELTRON_KANNUR_GEOFENCE.longitude;
-      await performBackgroundAutoPunch(false, lat, lng);
+      if (lastLoc?.coords) {
+        const lat = lastLoc.coords.latitude;
+        const lng = lastLoc.coords.longitude;
+        const dist = calculateDistanceToKeltron(lat, lng);
+        if (dist >= (KELTRON_KANNUR_GEOFENCE.exitRadius || 650)) {
+          await performBackgroundAutoPunch(false, lat, lng);
+        } else {
+          console.log(`[Geofence Task] Exit event ignored: last location distance is ${dist}m (< ${KELTRON_KANNUR_GEOFENCE.exitRadius}m).`);
+        }
+      }
     }
   } catch (e) {
     console.error('[Geofence Task] Execution error:', e.message);
@@ -341,7 +357,7 @@ export const setupGeofenceTracking = async () => {
 
     return {
       success: true,
-      message: '📍 24/7 Background Auto-Punch Active (300m Plant Zone)',
+      message: '📍 24/7 Background Auto-Punch Active (500m Plant Zone)',
     };
   } catch (err) {
     console.log('[Geofence] Setup safe bypass:', err.message);
